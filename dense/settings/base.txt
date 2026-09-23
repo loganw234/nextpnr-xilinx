@@ -1,0 +1,2 @@
+# Nothing set: every router2 setting at the 0.9.6 default. The control that
+# every other file here is compared with, on the same placement.

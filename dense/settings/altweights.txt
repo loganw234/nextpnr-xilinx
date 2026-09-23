@@ -1,0 +1,8 @@
+# Mainline nextpnr's "router2/alt-weights" profile (YosysHQ/nextpnr main
+# 3edea68, Router2Cfg): the congestion price starts at 5.0 and stays there,
+# history weight 0.5, estimate weight 1.0 - negotiation from the first
+# iteration, where the base starts at 0.5 and adds 2.0 each iteration.
+router2/initCurrCongWeight=5.0
+router2/histCongWeight=0.5
+router2/currCongWeightMult=0.0
+router2/estimateWeight=1.0

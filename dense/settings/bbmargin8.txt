@@ -1,0 +1,5 @@
+# Each net may search 8 tiles beyond its bounding box instead of 3, so an
+# arc blocked inside the box can detour; a net that keeps failing otherwise
+# gains one tile only every ten failures (router2.cc update_congestion).
+router2/bbMargin/x=8
+router2/bbMargin/y=8

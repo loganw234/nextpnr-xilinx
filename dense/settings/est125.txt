@@ -1,0 +1,4 @@
+# Mainline nextpnr's default estimate weight (YosysHQ/nextpnr main 3edea68,
+# Router2Cfg): 1.25, where the 0.9.6 base has 1.75. A lower weight lets the
+# search leave the straight line to the sink and go around congestion.
+router2/estimateWeight=1.25
