@@ -69,6 +69,7 @@ adds the per-iteration congestion files.
 | router2 prints its settings | every router2 setting as applied, which were set explicitly, and the iteration caps from the environment; an unknown `router2/` key is refused by name | no |
 | `--set KEY=VALUE` | a setting applied after the design file loads, logged with what it replaced; and a log line for every setting a design file overrode | no |
 | `router2/heatmap=PREFIX` | after each iteration, overuse by wire type (pin feeds and bounces against singles, doubles, quads, longs), by grid coordinate and by net, as CSV, and the top wire types in the log; off by default | no |
+| `router2/timingDriven=0|1` | the router's own switch for timing-driven routing (criticality in the wire cost, and the per-iteration timing analysis); the global `timing_driven` also steers the placer, so it cannot ask a routing-only question. Unset, the global one decides, as before | only when set |
 
 ## What bites
 

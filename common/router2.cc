@@ -1615,7 +1615,14 @@ struct Router2
             route_queue.push_back(i);
         }
 
-        timing_driven = ctx->setting<bool>("timing_driven");
+        // [dense] router2/timingDriven, when set, decides for the router
+        // alone. The global timing_driven steers the placer as well, so
+        // turning it off to ask a routing question changes the placement too.
+        const bool tmd_router_only = ctx->settings.count(ctx->id("router2/timingDriven")) != 0;
+        timing_driven = tmd_router_only ? ctx->setting<bool>("router2/timingDriven")
+                                        : ctx->setting<bool>("timing_driven");
+        log_info("router2 timing-driven: %s (from %s)\n", timing_driven ? "yes" : "no",
+                 tmd_router_only ? "router2/timingDriven" : "timing_driven");
         log_info("Running main router loop...\n");
         do {
             ctx->sorted_shuffle(route_queue);
@@ -1755,7 +1762,8 @@ Router2Cfg::Router2Cfg(Context *ctx)
             "router2/bwdMaxIter",         "router2/glbBwdMaxIter",  "router2/bbMargin/x",
             "router2/bbMargin/y",         "router2/ipinCostAdder",  "router2/biasCostFactor",
             "router2/initCurrCongWeight", "router2/histCongWeight", "router2/currCongWeightMult",
-            "router2/estimateWeight",     "router2/perfProfile",    "router2/heatmap"};
+            "router2/estimateWeight",     "router2/perfProfile",    "router2/heatmap",
+            "router2/timingDriven"};
     std::vector<std::string> explicit_keys;
     for (auto &s : ctx->settings) {
         std::string key = s.first.c_str(ctx);

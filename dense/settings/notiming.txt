@@ -1,6 +1,8 @@
-# Route for routability alone: router2 reads timing_driven, and with it off
-# neither arc criticality nor the per-iteration timing analysis enters. On
-# cft-fp256's pre-fix board placement nextpnr's own estimate was 19.8 MHz
-# against the 100 MHz asked, so nearly every arc was critical and the timing
-# term only added cost; the frozen placement's estimate is in its place.log.
-timing_driven=0
+# Route for routability alone: with router2/timingDriven off, neither arc
+# criticality nor the per-iteration timing analysis enters the router. The
+# placement stays timing-driven (router2/timingDriven is the router's own
+# switch; the global timing_driven would change the placement too), so this
+# routes the frozen placement. nextpnr's own estimate for that placement was
+# 22.4 MHz against the 100 MHz asked, so nearly every arc is critical and
+# the timing term only adds cost.
+router2/timingDriven=0
