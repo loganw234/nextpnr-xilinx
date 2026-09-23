@@ -1521,6 +1521,10 @@ struct Router2
             max_stall = atoi(e);
         if (const char *e = getenv("NEXTPNR_ROUTER2_MAX_ITER"))
             max_iter = atoi(e);
+        // [dense] The caps come from the environment, which no log records.
+        log_info("router2 caps: stop after %d iterations without improvement or %d in all "
+                 "(NEXTPNR_ROUTER2_MAX_STALL / NEXTPNR_ROUTER2_MAX_ITER)\n",
+                 max_stall, max_iter);
 
         // Hybrid GND/VCC strategy: do NOT route the constant nets in router2.  Their
         // sinks (e.g. const-tied CARRY4 DI inputs) compete with high-fanout signal nets
@@ -1665,6 +1669,34 @@ void router2(Context *ctx, const Router2Cfg &cfg)
 
 Router2Cfg::Router2Cfg(Context *ctx)
 {
+    // [dense] Every router2 setting this build reads, checked BEFORE any is
+    // read: Context::setting() writes a missing key's default back into
+    // ctx->settings, so afterwards "set by the user" and "defaulted" look
+    // alike. A key under router2/ that is not in this list is refused by
+    // name - upstream would read the correctly spelt key, find nothing, and
+    // run the default without a word, so a misspelt experiment would be
+    // recorded as the setting it never applied.
+    static const char *const known_keys[] = {
+            "router2/bwdMaxIter",         "router2/glbBwdMaxIter",  "router2/bbMargin/x",
+            "router2/bbMargin/y",         "router2/ipinCostAdder",  "router2/biasCostFactor",
+            "router2/initCurrCongWeight", "router2/histCongWeight", "router2/currCongWeightMult",
+            "router2/estimateWeight",     "router2/perfProfile"};
+    std::vector<std::string> explicit_keys;
+    for (auto &s : ctx->settings) {
+        std::string key = s.first.c_str(ctx);
+        if (key.rfind("router2/", 0) != 0)
+            continue;
+        bool known = false;
+        for (auto k : known_keys)
+            known |= (key == k);
+        if (!known)
+            log_error("router2: unknown setting '%s'; the settings this build reads are listed in "
+                      "Router2Cfg::Router2Cfg\n",
+                      key.c_str());
+        explicit_keys.push_back(key.substr(8));
+    }
+    std::sort(explicit_keys.begin(), explicit_keys.end());
+
     backwards_max_iter = ctx->setting<int>("router2/bwdMaxIter", 20);
     global_backwards_max_iter = ctx->setting<int>("router2/glbBwdMaxIter", 200);
     bb_margin_x = ctx->setting<int>("router2/bbMargin/x", 3);
@@ -1676,6 +1708,19 @@ Router2Cfg::Router2Cfg(Context *ctx)
     curr_cong_mult = ctx->setting<float>("router2/currCongWeightMult", 2.0f);
     estimate_weight = ctx->setting<float>("router2/estimateWeight", 1.75f);
     perf_profile = ctx->setting<float>("router2/perfProfile", false);
+
+    // [dense] The values that will actually apply, from the fields
+    // themselves rather than from the settings table, so an experiment's
+    // log records what ran.
+    std::string set_by_user;
+    for (auto &k : explicit_keys)
+        set_by_user += (set_by_user.empty() ? "" : ",") + k;
+    log_info("router2 settings: bwdMaxIter=%d glbBwdMaxIter=%d bbMargin=%d,%d ipinCostAdder=%g "
+             "biasCostFactor=%g initCurrCongWeight=%g histCongWeight=%g currCongWeightMult=%g "
+             "estimateWeight=%g perfProfile=%d; set explicitly: %s\n",
+             backwards_max_iter, global_backwards_max_iter, bb_margin_x, bb_margin_y, ipin_cost_adder,
+             bias_cost_factor, init_curr_cong_weight, hist_cong_weight, curr_cong_mult, estimate_weight,
+             int(perf_profile), set_by_user.empty() ? "none" : set_by_user.c_str());
 }
 
 NEXTPNR_NAMESPACE_END
