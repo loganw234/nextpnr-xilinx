@@ -32,10 +32,11 @@ it ran on.
   a named setting, until the ledger records it helping. One binary then
   runs both sides of every comparison, and the default build routes as
   0.9.6 does.
-- **`dense/build.sh` checks that**, every build: openXC7's blinky-kc705 is
-  built with the image's own binary and with this build, and the two
-  bitstreams must be byte-identical. The verdict is written into
-  `BUILD-INFO.txt` beside the binary.
+- **`dense/build.sh` checks that**, every build: openXC7's blinky-kc705 goes
+  through the whole flow with the image's own binary and with this build,
+  and the two FASM files must be identical apart from the comment naming
+  the version. The verdict is written into `BUILD-INFO.txt` beside the
+  binary.
 - **Every run is recorded in [dense/LEDGER.md](dense/LEDGER.md)** -
   dated, appended to and never edited; a correction is a new entry. An
   entry names the binary's version (`git describe --dirty`), the settings
@@ -86,4 +87,8 @@ settings files in `dense/settings/` are `KEY=VALUE` lines, passed to
 - **Iteration times depend on the machine's load.** `bench.sh` logs it each
   minute. The overuse per iteration should not depend on it - to be shown
   by running a configuration twice, and recorded, not assumed.
+- **No bitstream is byte-reproducible.** `xc7frames2bit` writes the date
+  and time into every `.bit` header, so two builds of the same design never
+  hash alike - compare the FASM. (This branch's first control compared
+  bitstreams and reported a difference that was only the clock.)
 - **The chip database must be the one the base was built with.**

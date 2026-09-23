@@ -49,3 +49,34 @@ profile, a wider bounding box, timing-driven routing off), then code. A
 change is judged by its overuse curve against the base settings' curve on
 the same placement, and by minutes per iteration beside the load it ran
 under.
+
+## 2026-09-23 - the first build, and a control that compared the wrong file
+
+`dense/build.sh` at 9ffb7d6 built 0.9.6-3-g9ffb7d6a (binary sha256
+5942c475...) in the toolchain image in about ten minutes on eight jobs, and
+its control reported **DIFFERS**: blinky-kc705's bitstream was 9d0befc4...
+from the image's own binary and 3109a856... from this build, and neither
+was the 2471bcc7... the image recorded when it was built.
+
+Taken apart on the same machine, one step at a time:
+
+    yosys, twice on blinky.v               identical netlists (d1e99e30...)
+    image binary, twice on that netlist    identical FASM (53ccdc52...)
+    image binary, OMP_NUM_THREADS=1, twice identical FASM (53ccdc52...)
+    this build, on that netlist            FASM 4f82b273..., differing from the image's in ONE line:
+                                           "# nextpnr-xilinx 0.9.6" against "# nextpnr-xilinx 0.9.6-3-g9ffb7d6a"
+
+So nextpnr is deterministic here, run to run and across thread counts, and
+this build routes blinky exactly as the pinned binary does. The bitstreams
+differ because `xc7frames2bit` writes the date and time into the `.bit`
+header ("2026/09/23 20:18:39" in this build's; "2026/08/13 10:23:30" in the
+one committed to demo-projects): no two bitstreams hash alike, so the
+recorded 2471bcc7... could never have been reproduced. The control was
+comparing the one file that cannot match.
+
+`build.sh` now compares the FASM, excluding the version comment, and reads
+which binary ran from its log (only this branch prints `router2 settings:`).
+Found by chasing the DIFFERS rather than waving it through; the determinism
+it established is also what the bench's curve comparisons rest on, and it
+holds on blinky - on the tile it is still to be shown, by running one
+configuration twice.
