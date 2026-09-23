@@ -1458,9 +1458,12 @@ struct Router2
             ThreadContext st;
             st.rng.rngseed(ctx->rng64());
             st.bb = ArcBounds(0, 0, std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
+            auto t_st = std::chrono::steady_clock::now();
             for (size_t j = 0; j < route_queue.size(); j++) {
                 route_net(st, nets_by_udata[route_queue[j]], false);
             }
+            log_info("    phases: %d nets on one thread (under 200 queued) in %.0fs\n", int(route_queue.size()),
+                     secs_since(t_st));
             return;
         }
         const int Nq = 4, Nv = 2, Nh = 2;
@@ -1515,6 +1518,10 @@ struct Router2
         }
         if (ctx->verbose)
             log_info("%d/%d nets not multi-threadable\n", int(tcs.at(N).route_nets.size()), int(route_queue.size()));
+        // [dense] where an iteration's time goes: each phase's nets and wall
+        // time, logged below. Changes no routing.
+        auto t_phase = std::chrono::steady_clock::now();
+        double s_quad, s_vert, s_horiz, s_serial, s_failed;
         // Multithreaded part of routing - quadrants
         std::vector<std::thread> threads;
         for (int i = 0; i < Nq; i++) {
@@ -1523,6 +1530,8 @@ struct Router2
         for (auto &t : threads)
             t.join();
         threads.clear();
+        s_quad = secs_since(t_phase);
+        t_phase = std::chrono::steady_clock::now();
         // Vertical splits
         for (int i = Nq; i < Nq + Nv; i++) {
             threads.emplace_back([this, &tcs, i]() { router_thread(tcs.at(i)); });
@@ -1530,6 +1539,8 @@ struct Router2
         for (auto &t : threads)
             t.join();
         threads.clear();
+        s_vert = secs_since(t_phase);
+        t_phase = std::chrono::steady_clock::now();
         // Horizontal splits
         for (int i = Nq + Nv; i < Nq + Nv + Nh; i++) {
             threads.emplace_back([this, &tcs, i]() { router_thread(tcs.at(i)); });
@@ -1537,14 +1548,32 @@ struct Router2
         for (auto &t : threads)
             t.join();
         threads.clear();
+        s_horiz = secs_since(t_phase);
+        t_phase = std::chrono::steady_clock::now();
         // Singlethreaded part of routing - nets that cross partitions
         // or don't fit within bounding box
         for (auto st_net : tcs.at(N).route_nets)
             route_net(tcs.at(N), st_net, false);
+        s_serial = secs_since(t_phase);
+        t_phase = std::chrono::steady_clock::now();
         // Failed nets
+        int n_failed = 0;
         for (int i = 0; i < N; i++)
-            for (auto fail : tcs.at(i).failed_nets)
+            for (auto fail : tcs.at(i).failed_nets) {
                 route_net(tcs.at(N), fail, false);
+                ++n_failed;
+            }
+        s_failed = secs_since(t_phase);
+        auto nn = [&](int i) { return int(tcs.at(i).route_nets.size()); };
+        log_info("    phases: quadrants %d+%d+%d+%d nets %.0fs, halves %d+%d %.0fs and %d+%d %.0fs, "
+                 "one thread %d nets %.0fs, then %d nets whose arcs left their thread's box %.0fs\n",
+                 nn(0), nn(1), nn(2), nn(3), s_quad, nn(4), nn(5), s_vert, nn(6), nn(7), s_horiz, nn(N), s_serial,
+                 n_failed, s_failed);
+    }
+
+    static double secs_since(std::chrono::steady_clock::time_point t0)
+    {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     }
 
     //#define ROUTER2_STATISTICS
