@@ -47,16 +47,20 @@ it ran on.
 
 ## Using it
 
-    bash dense/build.sh                    # -> build-dense/nextpnr-xilinx, build-dense/BUILD-INFO.txt
-    bash dense/bench.sh --name NAME --settings dense/settings/FILE.txt [--max-iter N]
+    bash dense/build.sh [BUILD_DIR]        # -> BUILD_DIR/nextpnr-xilinx and BUILD-INFO.txt
+    bash dense/bench.sh --name NAME --binary BUILD_DIR --settings dense/settings/FILE.txt                         [--max-iter N] [--heatmap]
+    bash dense/bench.sh --summarize RUN_DIR   # read a finished run again
 
-`bench.sh` routes one frozen placement (`~/dense-bench/placed.json`, made
-once by the pinned binary with `--no-route`, with its own PROVENANCE.txt),
-so runs differ only in the binary and the settings. Each run's directory
-holds its provenance, the timestamped log, the overuse curve, the machine's
-load, and a summary read from the log rather than from the exit code. The
-settings files in `dense/settings/` are `KEY=VALUE` lines, passed to
-`--set`.
+`bench.sh` places and routes cft-fp256's board netlist
+(`~/dense-bench/netlist.json`) in one process and shows each run's
+placement to be the frozen one (`~/dense-bench/place.log`, made once by the
+pinned binary, with its PROVENANCE.txt): placement is deterministic, and the
+summary says IDENTICAL or where it differs. So runs differ only in the
+binary and the settings. Each run's directory holds its provenance, the
+timestamped log, the overuse curve, the machine's load, and a summary read
+from the log rather than from the exit code. The settings files in
+`dense/settings/` are `KEY=VALUE` lines, passed to `--set`; `--heatmap`
+adds the per-iteration congestion files.
 
 ## What this branch adds, so far
 
@@ -83,6 +87,12 @@ settings files in `dense/settings/` are `KEY=VALUE` lines, passed to
   partial route - `bench.sh` refuses to run with it set) and
   `NPNR_ROUTER1_RECHECK`. `bench.sh` records every `NEXTPNR_` and `NPNR_`
   variable it passes.
+- **0.9.6 does not route a placed design it wrote the way it routes the same
+  design in memory.** Reloaded with `--no-pack --no-place`, cft-fp256's
+  placement has an arc no search can reach, which the in-memory flow routes;
+  the pinned binary fails identically, so this is upstream's. `bench.sh`
+  places and routes in one process instead (`--input placed` keeps the
+  reload for when it is fixed).
 - **Its Python bindings do not reach `ctx->settings`,** so a `--pre-route`
   script cannot set router options; hence `--set`.
 - **Iteration times depend on the machine's load.** `bench.sh` logs it each

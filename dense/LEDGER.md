@@ -80,3 +80,48 @@ Found by chasing the DIFFERS rather than waving it through; the determinism
 it established is also what the bench's curve comparisons rest on, and it
 holds on blinky - on the tile it is still to be shown, by running one
 configuration twice.
+
+## 2026-09-23 - the first bench runs: a reloaded placement 0.9.6 cannot route
+
+Four runs of the frozen placement, `--input placed` (the only mode then),
+from 13:26 box time; times below are the log's, in UTC.
+
+| run | binary, settings | outcome |
+|---|---|---|
+| base | 0.9.6-4-g2860169e, defaults, cap 2 | **failed** in iteration 1, 12 minutes into routing (20:27 to 20:39) |
+| altweights | same binary, alt-weights | stopped by decision at 13:41, still in iteration 1 |
+| est125 | same binary, estimate weight 1.25 | stopped by decision at 13:41, still in iteration 1 |
+| roundtrip-image | the image's own 0.9.6, copied out of it (sha256 4c7e1b92...) | **failed** identically, 20:52:50 |
+
+Both failures:
+
+    ERROR: Failed to route arc 7 of net '$abc$5595557$flatten\u_krnl.\u_seq.$procmux$122531_Y[1]',
+           from SITEWIRE/SLICE_X121Y302/A6LUT_O6 to SITEWIRE/SLICE_X120Y303/AFFMUX_OUT.
+
+That error comes after the search without a bounding box has found no path
+at all - a connectivity failure, which no cost setting changes; so the two
+variants were stopped rather than left to reach it. The same placement,
+placed and routed in one process by the same pinned binary (cft-fp256's
+`pnr-board-6a2b26c`, still running), routed every arc through three
+iterations (340,836; 98,546; 74,578). Both flows adopted 50,736 pre-routed
+arcs before router2 started. So **0.9.6 does not route a placed design it
+wrote itself the way it routes the same design in memory**, and since the
+pinned binary fails identically, the defect is upstream's, not this
+branch's. Not investigated further yet; the arc - a LUT output to the
+flip-flop input multiplexer of a neighbouring slice - is named above for
+whoever does.
+
+The placement is the same either way: placement is deterministic here (the
+frozen placement's 26 wirelength lines equal the original run's, line for
+line). So `bench.sh` now places and routes in one process by default
+(`--input netlist`, about 20 minutes of placement a run) and compares each
+run's trajectory with the frozen placement's - checked both ways before use:
+IDENTICAL against the original 6a2b26c run, DIFFERS from the first line
+against the ef9c3ec board's.
+
+**And a defect of `bench.sh`'s own.** Neither failed run got a
+`summary.txt`: the grep for iteration lines found nothing, and under `set
+-e` that ended the script before the summary was written - the one kind of
+run whose summary matters most. The analysis is now a function with
+errexit off, and `bench.sh --summarize RUN_DIR` reads any run again; the
+four runs above were summarised that way by the commit that adds it.
