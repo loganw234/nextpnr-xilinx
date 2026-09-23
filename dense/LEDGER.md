@@ -125,3 +125,50 @@ against the ef9c3ec board's.
 run whose summary matters most. The analysis is now a function with
 errexit off, and `bench.sh --summarize RUN_DIR` reads any run again; the
 four runs above were summarised that way by the commit that adds it.
+
+## 2026-09-23 - three runs with three placements, and why: a setting added before packing moves the annealer
+
+**The runs.** `diag` (defaults and `--heatmap`), `altweights` and `est125`
+(each with `--heatmap`), by 0.9.6-5-g5186cac4, `--input netlist`, from
+13:55. All three placed differently from the frozen placement: the 17 HeAP
+lines matched and the annealer's did not, from its fifth iteration, and
+differently from one another. The two variants were stopped at 14:37 by
+decision - neither curve could be compared with the reference or with the
+other - and `diag` left to run, for its congestion maps, which describe a
+placement of this design whichever it is. `est125`'s one iteration
+(283,396 overuse, 11 minutes) is recorded in its summary and compared with
+nothing.
+
+**The cause, isolated.** Two placements by 0.9.6-9-ge2cd46ea, `--no-route`,
+from 14:38:
+
+    no --set                          IDENTICAL to the frozen placement, all 26 lines
+    --set router2/heatmap=heat only   DIFFERS from the annealer's fifth iteration
+
+So this branch's build places exactly as the pinned binary does, and
+`--set` - which creates a setting's name and a new key in ctx->settings
+before packing - moves the annealer, though only the router ever reads the
+setting. (Why the annealer is sensitive to that is upstream's to answer; an
+iteration order that follows interned-name indices or hash order would do
+it.) **The fix is `--set-route`**, applied after placement, immediately
+before routing; `bench.sh` passes every `router2/` key that way. Whether a
+setting applied just before routing changes the routing itself, when it
+should not, is the next thing to show: a run with nothing set and a run
+with only the heatmap on must give the same curve.
+
+**The first congestion map** (`diag`, iteration 1, 342,894 overuse over a
+238 x 366 grid): by wire type, vertical quads 109,654 (32%), singles 35,006,
+pin feeds into LUT inputs 31,747 (counted once as PINFEED and again as
+LUTINPUT), horizontal quads 29,572, doubles 25,518 - general interconnect,
+led by vertical wiring, more than slice pin access. By place, concentrated
+right of centre, x 165 to 175 and y 150 to 270. By net, broad: 111,662 nets
+touch an overused wire, and the 482 of fanout above 100 carry about 5% of
+the per-net total - with one outlier, `u_krnl.arr_rdy`, fanout 31,968. The
+first iteration is inflated by the router's nearly free first pass; which of
+this persists is for iterations 2 and 3.
+
+**Builds.** b2d8e81 (the three convergence knobs and `router2/timingDriven`)
+and e2cd46e (phase timing) both MATCH the pinned binary's blinky FASM. The
+d47beff build compiled but never finished its control: a `pkill -f` whose
+pattern also matched the command running it ended the build script and the
+session. Its directory carries a SUPERSEDED note; nothing was run on it.

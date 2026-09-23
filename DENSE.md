@@ -68,6 +68,7 @@ adds the per-iteration congestion files.
 |---|---|---|
 | router2 prints its settings | every router2 setting as applied, which were set explicitly, and the iteration caps from the environment; an unknown `router2/` key is refused by name | no |
 | `--set KEY=VALUE` | a setting applied after the design file loads, logged with what it replaced; and a log line for every setting a design file overrode | no |
+| `--set-route KEY=VALUE` | the same, applied after placement and immediately before routing, so a router setting cannot change the placement; `bench.sh` passes every `router2/` key this way | no |
 | `router2/heatmap=PREFIX` | after each iteration, overuse by wire type (pin feeds and bounces against singles, doubles, quads, longs), by grid coordinate and by net, as CSV, and the top wire types in the log; off by default | no |
 | `router2/timingDriven=0|1` | the router's own switch for timing-driven routing (criticality in the wire cost, and the per-iteration timing analysis); the global `timing_driven` also steers the placer, so it cannot ask a routing-only question. Unset, the global one decides, as before | only when set |
 | `router2/currCongWeightGrowth=F` | the congestion price becomes price x F + currCongWeightMult after each iteration; 1.0 (the default) is upstream's addition, bit for bit | only when not 1.0 |
@@ -81,6 +82,11 @@ adds the per-iteration congestion files.
   applied, so routing a placed design again with another `--freq`,
   `--no-tmdriv` or `--seed` silently keeps the file's. This branch logs
   every setting the file replaced; `--set` is applied after the load.
+- **A setting added before packing changes the placement, even one only the
+  router reads.** With `--set router2/heatmap=heat` the annealer's trajectory
+  left the frozen placement's at its fifth iteration; the same build with no
+  `--set` placed identically (dense/LEDGER.md). Router settings go in with
+  `--set-route`.
 - **A misspelt setting is silently defaulted upstream.** `Context::setting()`
   returns the default when the key is absent. This branch refuses unknown
   `router2/` keys; other prefixes (`placerHeap/`, ...) are still silent.

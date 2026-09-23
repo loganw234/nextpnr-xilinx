@@ -55,6 +55,8 @@ class CommandHandler
     int executeMain(std::unique_ptr<Context> ctx);
     po::options_description getGeneralOptions();
     void run_script_hook(const std::string &name);
+    // [dense] --set / --set-route KEY=VALUE into ctx->settings, logged
+    void apply_set_options(Context *ctx, const char *opt);
     void printFooter();
 
   protected:

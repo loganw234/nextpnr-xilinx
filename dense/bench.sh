@@ -27,12 +27,15 @@
 #
 # THE SETTINGS are a file of KEY=VALUE lines (# starts a comment), e.g.
 #     router2/estimateWeight=1.25
-# each passed as this branch's --set, which applies it AFTER the placement
-# is loaded - a placed design's own settings are otherwise written over the
-# command line's - and logs what it replaced. The 0.9.6 base cannot take
-# them any other way: its Python bindings do not reach ctx->settings. The
-# file is copied into the run, and what router2 says it APPLIED (the
-# "router2 settings:" line) is what the summary records, not the file.
+# A router2/ key is passed as this branch's --set-route, applied after
+# placement and immediately before routing - a setting added before packing
+# changes the annealer's placement even when only the router reads it. Any
+# other key is --set, applied after the design loads (a placed design's own
+# settings are otherwise written over the command line's), and the placement
+# check reports what it did. Both log what they replaced. The 0.9.6 base can
+# take neither: its Python bindings do not reach ctx->settings. The file is
+# copied into the run, and what router2 says it APPLIED (the "router2
+# settings:" line) is what the summary records, not the file.
 #
 # EACH RUN gets DIR/runs/<yyyymmdd-hhmm>-NAME/:
 #   PROVENANCE.txt  binary version and hash, its BUILD-INFO, the settings file
@@ -159,9 +162,16 @@ while read -r line; do
   line=${line%%#*}; line=$(echo "$line" | tr -d '[:space:]')
   [ -n "$line" ] || continue
   [[ "$line" =~ ^[A-Za-z0-9_./-]+=[A-Za-z0-9_.+-]+$ ]] || die "settings line is not KEY=VALUE: '$line'"
-  SETARGS="$SETARGS --set $line"
+  # A router setting goes in after placement: a setting added before packing
+  # changes the annealer's placement even when only the router reads it
+  # (dense/LEDGER.md, 2026-09-23). Anything else is --set, and the placement
+  # check says what it did.
+  case "$line" in
+    router2/*) SETARGS="$SETARGS --set-route $line" ;;
+    *)         SETARGS="$SETARGS --set $line" ;;
+  esac
 done < "$RUN/settings.txt"
-[ "$HEATMAP" -eq 0 ] || SETARGS="$SETARGS --set router2/heatmap=heat"
+[ "$HEATMAP" -eq 0 ] || SETARGS="$SETARGS --set-route router2/heatmap=heat"
 
 VERSION=$(docker run --rm -v "$BIN":/bindense:ro "$IMAGE" /bindense/nextpnr-xilinx --version 2>&1 | head -1)
 ENVARGS=()

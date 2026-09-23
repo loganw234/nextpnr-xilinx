@@ -162,7 +162,11 @@ po::options_description CommandHandler::getGeneralOptions()
     general.add_options()("set", po::value<std::vector<std::string>>(),
                           "KEY=VALUE: a setting applied AFTER the design file is loaded, so it is not "
                           "overwritten by the file's own settings; logged with the value it replaced "
-                          "(repeatable; booleans as 0/1)");
+                          "(repeatable; booleans as 0/1). It is in place before packing, and a setting "
+                          "added then changes the annealer's placement even when only the router reads it");
+    general.add_options()("set-route", po::value<std::vector<std::string>>(),
+                          "KEY=VALUE: as --set, but applied after placement, immediately before routing, "
+                          "so a router setting cannot change the placement (repeatable)");
     general.add_options()("sdf", po::value<std::string>(), "SDF delay back-annotation file to write");
     general.add_options()("sdf-cvc", "enable tweaks for SDF file compatibility with the CVC simulator");
 
@@ -175,6 +179,24 @@ static std::string dense_setting_str(const Property &p)
     if (p.is_string)
         return p.str;
     return std::to_string(p.as_int64());
+}
+
+// [dense] --set and --set-route: each KEY=VALUE into ctx->settings, logged
+// with the value it replaced.
+void CommandHandler::apply_set_options(Context *ctx, const char *opt)
+{
+    if (!vm.count(opt))
+        return;
+    for (auto &kv : vm[opt].as<std::vector<std::string>>()) {
+        auto eq = kv.find('=');
+        if (eq == std::string::npos || eq == 0)
+            log_error("--%s takes KEY=VALUE, got '%s'\n", opt, kv.c_str());
+        std::string key = kv.substr(0, eq), value = kv.substr(eq + 1);
+        auto found = ctx->settings.find(ctx->id(key));
+        std::string was = found == ctx->settings.end() ? "unset" : dense_setting_str(found->second);
+        ctx->settings[ctx->id(key)] = value;
+        log_info("--%s %s=%s (was %s)\n", opt, key.c_str(), value.c_str(), was.c_str());
+    }
 }
 
 void CommandHandler::setupContext(Context *ctx)
@@ -346,18 +368,7 @@ int CommandHandler::executeMain(std::unique_ptr<Context> ctx)
 
     // [dense] --set KEY=VALUE, after the design file, so the command line
     // has the last word, and the log records what each one replaced.
-    if (vm.count("set")) {
-        for (auto &kv : vm["set"].as<std::vector<std::string>>()) {
-            auto eq = kv.find('=');
-            if (eq == std::string::npos || eq == 0)
-                log_error("--set takes KEY=VALUE, got '%s'\n", kv.c_str());
-            std::string key = kv.substr(0, eq), value = kv.substr(eq + 1);
-            auto found = ctx->settings.find(ctx->id(key));
-            std::string was = found == ctx->settings.end() ? "unset" : dense_setting_str(found->second);
-            ctx->settings[ctx->id(key)] = value;
-            log_info("--set %s=%s (was %s)\n", key.c_str(), value.c_str(), was.c_str());
-        }
-    }
+    apply_set_options(ctx.get(), "set");
 
 #ifndef NO_PYTHON
     init_python(argv[0], true);
@@ -398,6 +409,8 @@ int CommandHandler::executeMain(std::unique_ptr<Context> ctx)
 
         if (do_route) {
             run_script_hook("pre-route");
+            // [dense] --set-route: after placement, immediately before routing
+            apply_set_options(ctx.get(), "set-route");
             if (!ctx->route() && !ctx->force)
                 log_error("Routing design failed.\n");
             run_script_hook("post-route");
