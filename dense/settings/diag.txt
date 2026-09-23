@@ -1,0 +1,5 @@
+# The defaults, plus where the overuse is after each iteration: router2
+# writes heat_iterN_by_{type,xy,net}.csv into the run directory and logs the
+# wire types with the most. Changes no routing, so its curve must equal
+# base.txt's on the same placement.
+router2/heatmap=heat

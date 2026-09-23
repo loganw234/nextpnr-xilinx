@@ -64,6 +64,7 @@ settings files in `dense/settings/` are `KEY=VALUE` lines, passed to
 |---|---|---|
 | router2 prints its settings | every router2 setting as applied, which were set explicitly, and the iteration caps from the environment; an unknown `router2/` key is refused by name | no |
 | `--set KEY=VALUE` | a setting applied after the design file loads, logged with what it replaced; and a log line for every setting a design file overrode | no |
+| `router2/heatmap=PREFIX` | after each iteration, overuse by wire type (pin feeds and bounces against singles, doubles, quads, longs), by grid coordinate and by net, as CSV, and the top wire types in the log; off by default | no |
 
 ## What bites
 

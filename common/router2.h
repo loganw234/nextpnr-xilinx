@@ -49,6 +49,11 @@ struct Router2Cfg
 
     // Print additional performance profiling information
     bool perf_profile = false;
+
+    // [dense] When not empty: a file prefix, and each iteration writes where
+    // the overuse is - by wire type, by grid coordinate, by net - and logs
+    // the wire types with the most. Off by default; changes no routing.
+    std::string heatmap;
 };
 
 void router2(Context *ctx, const Router2Cfg &cfg);

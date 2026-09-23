@@ -1311,6 +1311,79 @@ struct Router2
             out << std::endl;
         }
     }
+    // [dense] Where the overuse is, after an iteration, when router2/heatmap
+    // names a file prefix: by wire type (the arch's wire class - on Xilinx
+    // the intent: pin feeds and bounces against singles, doubles, quads and
+    // longs), by grid coordinate, and by net. The idea is mainline's
+    // (YosysHQ/nextpnr 3edea68, write_*_heatmap); the counts come from this
+    // router's own bound_nets, the same ones update_congestion() sums, so the
+    // files and the iteration line agree.
+    void write_diagnostics(int iter)
+    {
+        struct TypeCount
+        {
+            int wires = 0, used = 0, overused = 0, overuse = 0;
+        };
+        std::map<std::string, TypeCount> by_type;
+        const int gx = ctx->getGridDimX(), gy = ctx->getGridDimY();
+        std::vector<std::vector<int>> by_xy(gy + 1, std::vector<int>(gx + 1, 0));
+        std::map<int, int> by_net;
+        for (auto &wd : flat_wires) {
+            int n = int(wd.bound_nets.size());
+            auto &tc = by_type[ctx->getWireType(wd.w).c_str(ctx)];
+            ++tc.wires;
+            if (n > 0)
+                ++tc.used;
+            if (n < 2)
+                continue;
+            ++tc.overused;
+            tc.overuse += n - 1;
+            if (wd.x >= 0 && wd.x <= gx && wd.y >= 0 && wd.y <= gy)
+                by_xy.at(wd.y).at(wd.x) += n - 1;
+            for (auto &bn : wd.bound_nets)
+                by_net[bn.first] += n - 1;
+        }
+        std::string pre = cfg.heatmap + "_iter" + std::to_string(iter);
+        {
+            std::ofstream f(pre + "_by_type.csv");
+            f << "type,wires,used,overused,overuse" << std::endl;
+            for (auto &t : by_type)
+                f << t.first << "," << t.second.wires << "," << t.second.used << "," << t.second.overused << ","
+                  << t.second.overuse << std::endl;
+        }
+        {
+            // one row per grid row y, one column per x: total overuse there
+            std::ofstream f(pre + "_by_xy.csv");
+            for (auto &row : by_xy) {
+                for (size_t x = 0; x < row.size(); x++)
+                    f << (x ? "," : "") << row[x];
+                f << std::endl;
+            }
+        }
+        {
+            std::vector<std::pair<int, int>> nets_sorted;
+            for (auto &n : by_net)
+                nets_sorted.emplace_back(n.second, n.first);
+            std::sort(nets_sorted.rbegin(), nets_sorted.rend());
+            std::ofstream f(pre + "_by_net.csv");
+            f << "net,users,overuse" << std::endl;
+            for (auto &n : nets_sorted)
+                f << nets_by_udata.at(n.second)->name.c_str(ctx) << ","
+                  << nets_by_udata.at(n.second)->users.size() << "," << n.first << std::endl;
+        }
+        std::vector<std::pair<int, std::string>> top;
+        for (auto &t : by_type)
+            if (t.second.overuse > 0)
+                top.emplace_back(t.second.overuse, t.first);
+        std::sort(top.rbegin(), top.rend());
+        std::string line;
+        for (size_t i = 0; i < top.size() && i < 6; i++)
+            line += stringf("%s%s %d (%d wires)", i ? ", " : "", top[i].second.c_str(), top[i].first,
+                            by_type[top[i].second].overused);
+        log_info("    overuse by wire type: %s; %s_by_{type,xy,net}.csv\n", line.empty() ? "none" : line.c_str(),
+                 pre.c_str());
+    }
+
     int mid_x = 0, mid_y = 0;
 
     void partition_nets()
@@ -1578,6 +1651,8 @@ struct Router2
             do_route();
             route_queue.clear();
             update_congestion();
+            if (!cfg.heatmap.empty())
+                write_diagnostics(iter);
 #if 0
             if (iter == 1 && ctx->debug) {
                 std::ofstream cong_map("cong_map_0.csv");
@@ -1680,7 +1755,7 @@ Router2Cfg::Router2Cfg(Context *ctx)
             "router2/bwdMaxIter",         "router2/glbBwdMaxIter",  "router2/bbMargin/x",
             "router2/bbMargin/y",         "router2/ipinCostAdder",  "router2/biasCostFactor",
             "router2/initCurrCongWeight", "router2/histCongWeight", "router2/currCongWeightMult",
-            "router2/estimateWeight",     "router2/perfProfile"};
+            "router2/estimateWeight",     "router2/perfProfile",    "router2/heatmap"};
     std::vector<std::string> explicit_keys;
     for (auto &s : ctx->settings) {
         std::string key = s.first.c_str(ctx);
@@ -1708,6 +1783,11 @@ Router2Cfg::Router2Cfg(Context *ctx)
     curr_cong_mult = ctx->setting<float>("router2/currCongWeightMult", 2.0f);
     estimate_weight = ctx->setting<float>("router2/estimateWeight", 1.75f);
     perf_profile = ctx->setting<float>("router2/perfProfile", false);
+    // read directly: Context::setting<T> writes a missing default back with
+    // std::to_string, which has no overload for a string
+    auto hm = ctx->settings.find(ctx->id("router2/heatmap"));
+    if (hm != ctx->settings.end())
+        heatmap = hm->second.is_string ? hm->second.as_string() : std::to_string(hm->second.as_int64());
 
     // [dense] The values that will actually apply, from the fields
     // themselves rather than from the settings table, so an experiment's
@@ -1717,10 +1797,11 @@ Router2Cfg::Router2Cfg(Context *ctx)
         set_by_user += (set_by_user.empty() ? "" : ",") + k;
     log_info("router2 settings: bwdMaxIter=%d glbBwdMaxIter=%d bbMargin=%d,%d ipinCostAdder=%g "
              "biasCostFactor=%g initCurrCongWeight=%g histCongWeight=%g currCongWeightMult=%g "
-             "estimateWeight=%g perfProfile=%d; set explicitly: %s\n",
+             "estimateWeight=%g perfProfile=%d heatmap=%s; set explicitly: %s\n",
              backwards_max_iter, global_backwards_max_iter, bb_margin_x, bb_margin_y, ipin_cost_adder,
              bias_cost_factor, init_curr_cong_weight, hist_cong_weight, curr_cong_mult, estimate_weight,
-             int(perf_profile), set_by_user.empty() ? "none" : set_by_user.c_str());
+             int(perf_profile), heatmap.empty() ? "off" : heatmap.c_str(),
+             set_by_user.empty() ? "none" : set_by_user.c_str());
 }
 
 NEXTPNR_NAMESPACE_END
