@@ -1,0 +1,5 @@
+# A wire the search reaches again for less is re-parented and queued again;
+# upstream keeps the first path to reach each wire, so its cheaper-path test
+# never fires (TOOL-A, "The search keeps the first path"). Expect more work
+# per arc and, if the finding holds, faster negotiation.
+router2/revisitCheaper=1

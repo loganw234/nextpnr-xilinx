@@ -1,0 +1,5 @@
+# A net that keeps failing gains 2 tiles every 2 failures instead of 1 every
+# 10, so detours outside a congested box open in a few iterations rather than
+# dozens (TOOL-A, "Detours outside the net's box open late").
+router2/bbGrowEvery=2
+router2/bbGrowBy=2

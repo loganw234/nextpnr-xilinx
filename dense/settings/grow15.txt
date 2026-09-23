@@ -1,0 +1,5 @@
+# The congestion price multiplied by 1.5 each iteration before the upstream
+# +2.0: 0.5, 2.75, 6.1, 11.2, 18.8, 30.2 by iteration 6, where upstream's
+# addition alone reaches 10.5. Tests whether the price's slow growth is why
+# the last conflicts linger (TOOL-A, "The congestion price grows by addition").
+router2/currCongWeightGrowth=1.5

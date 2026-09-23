@@ -70,6 +70,9 @@ adds the per-iteration congestion files.
 | `--set KEY=VALUE` | a setting applied after the design file loads, logged with what it replaced; and a log line for every setting a design file overrode | no |
 | `router2/heatmap=PREFIX` | after each iteration, overuse by wire type (pin feeds and bounces against singles, doubles, quads, longs), by grid coordinate and by net, as CSV, and the top wire types in the log; off by default | no |
 | `router2/timingDriven=0|1` | the router's own switch for timing-driven routing (criticality in the wire cost, and the per-iteration timing analysis); the global `timing_driven` also steers the placer, so it cannot ask a routing-only question. Unset, the global one decides, as before | only when set |
+| `router2/currCongWeightGrowth=F` | the congestion price becomes price x F + currCongWeightMult after each iteration; 1.0 (the default) is upstream's addition, bit for bit | only when not 1.0 |
+| `router2/revisitCheaper=1` | a wire the search reaches again for less is re-parented and queued again, stale queue entries skipped; upstream keeps the first path to reach a wire | only when set |
+| `router2/bbGrowEvery=N`, `bbGrowBy=M` | a net that keeps failing grows its box by M tiles every N failures; upstream's 1 every 10 by default | only when changed |
 
 ## What bites
 

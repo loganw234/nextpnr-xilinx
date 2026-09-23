@@ -54,6 +54,17 @@ struct Router2Cfg
     // the overuse is - by wire type, by grid coordinate, by net - and logs
     // the wire types with the most. Off by default; changes no routing.
     std::string heatmap;
+
+    // [dense] Each off, or at upstream's value, by default:
+    // the present-congestion weight after an iteration becomes
+    // weight * curr_cong_growth + curr_cong_mult (1.0: upstream's addition)
+    float curr_cong_growth = 1.0f;
+    // re-queue a wire the search reaches again for less (upstream keeps the
+    // first path to reach a wire)
+    bool revisit_cheaper = false;
+    // a net that keeps failing grows its box by bb_grow_by tiles every
+    // bb_grow_every failures (upstream: 1 every 10)
+    int bb_grow_every = 10, bb_grow_by = 1;
 };
 
 void router2(Context *ctx, const Router2Cfg &cfg);

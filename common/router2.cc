@@ -953,6 +953,11 @@ struct Router2
             auto curr = t.queue.top();
             auto &d = flat_wires.at(curr.wire);
             t.queue.pop();
+            // [dense] router2/revisitCheaper: a wire can be queued again when
+            // it is reached for less, so an entry costlier than the wire's
+            // latest recorded score is stale - skip it
+            if (cfg.revisit_cheaper && curr.score.total() > d.visit.score.total())
+                continue;
             ++iter;
 #if 0
             ROUTE_LOG_DBG("current wire %s\n", ctx->nameOfWire(d.w));
@@ -976,7 +981,11 @@ struct Router2
                 // Evaluate score of next wire
                 WireId next = ctx->getPipDstWire(dh);
                 int next_idx = wire_to_idx.at(next);
-                if (was_visited(next_idx))
+                // [dense] upstream keeps the first path to reach a wire: this
+                // skip makes the cheaper-path test below unreachable. With
+                // router2/revisitCheaper the test decides, so a wire reached
+                // again for less is re-parented and queued again.
+                if (was_visited(next_idx) && !cfg.revisit_cheaper)
                     continue;
 #if 1
                 if (debug_arc)
@@ -1145,12 +1154,14 @@ struct Router2
         for (int n : failed_nets) {
             auto &net_data = nets.at(n);
             ++net_data.fail_count;
-            if ((net_data.fail_count % 10) == 0) {
+            // [dense] how often and by how much: router2/bbGrowEvery and
+            // router2/bbGrowBy, upstream's 10 and 1 by default
+            if ((net_data.fail_count % cfg.bb_grow_every) == 0) {
                 // Every ten times a net fails to route, expand the bounding box to increase the search space
-                net_data.bb.x0 = std::max(net_data.bb.x0 - 1, 0);
-                net_data.bb.y0 = std::max(net_data.bb.y0 - 1, 0);
-                net_data.bb.x1 = std::min(net_data.bb.x1 + 1, ctx->getGridDimX());
-                net_data.bb.y1 = std::min(net_data.bb.y1 + 1, ctx->getGridDimY());
+                net_data.bb.x0 = std::max(net_data.bb.x0 - cfg.bb_grow_by, 0);
+                net_data.bb.y0 = std::max(net_data.bb.y0 - cfg.bb_grow_by, 0);
+                net_data.bb.x1 = std::min(net_data.bb.x1 + cfg.bb_grow_by, ctx->getGridDimX());
+                net_data.bb.y1 = std::min(net_data.bb.y1 + cfg.bb_grow_by, ctx->getGridDimY());
             }
         }
     }
@@ -1677,8 +1688,10 @@ struct Router2
             log_info("    iter=%d wires=%d overused=%d overuse=%d archfail=%s\n", iter, total_wire_use, overused_wires,
                      total_overuse, overused_wires > 0 ? "NA" : std::to_string(arch_fail).c_str());
             ++iter;
+            // [dense] router2/currCongWeightGrowth multiplies before the add;
+            // at its default 1.0 this is upstream's "+= mult" exactly
             if (curr_cong_weight < 1e9)
-                curr_cong_weight += cfg.curr_cong_mult;
+                curr_cong_weight = curr_cong_weight * cfg.curr_cong_growth + cfg.curr_cong_mult;
             // Stall / cap detection (fail loud rather than loop forever)
             if (overused_wires < best_overuse) {
                 best_overuse = overused_wires;
@@ -1763,7 +1776,8 @@ Router2Cfg::Router2Cfg(Context *ctx)
             "router2/bbMargin/y",         "router2/ipinCostAdder",  "router2/biasCostFactor",
             "router2/initCurrCongWeight", "router2/histCongWeight", "router2/currCongWeightMult",
             "router2/estimateWeight",     "router2/perfProfile",    "router2/heatmap",
-            "router2/timingDriven"};
+            "router2/timingDriven",       "router2/currCongWeightGrowth", "router2/revisitCheaper",
+            "router2/bbGrowEvery",        "router2/bbGrowBy"};
     std::vector<std::string> explicit_keys;
     for (auto &s : ctx->settings) {
         std::string key = s.first.c_str(ctx);
@@ -1796,6 +1810,15 @@ Router2Cfg::Router2Cfg(Context *ctx)
     auto hm = ctx->settings.find(ctx->id("router2/heatmap"));
     if (hm != ctx->settings.end())
         heatmap = hm->second.is_string ? hm->second.as_string() : std::to_string(hm->second.as_int64());
+    curr_cong_growth = ctx->setting<float>("router2/currCongWeightGrowth", 1.0f);
+    revisit_cheaper = ctx->setting<int>("router2/revisitCheaper", 0) != 0;
+    bb_grow_every = ctx->setting<int>("router2/bbGrowEvery", 10);
+    bb_grow_by = ctx->setting<int>("router2/bbGrowBy", 1);
+    if (!(curr_cong_growth > 0.0f))
+        log_error("router2: currCongWeightGrowth must be above 0, got %g\n", curr_cong_growth);
+    if (bb_grow_every < 1 || bb_grow_by < 0)
+        log_error("router2: bbGrowEvery must be at least 1 and bbGrowBy at least 0, got %d and %d\n",
+                  bb_grow_every, bb_grow_by);
 
     // [dense] The values that will actually apply, from the fields
     // themselves rather than from the settings table, so an experiment's
@@ -1805,11 +1828,12 @@ Router2Cfg::Router2Cfg(Context *ctx)
         set_by_user += (set_by_user.empty() ? "" : ",") + k;
     log_info("router2 settings: bwdMaxIter=%d glbBwdMaxIter=%d bbMargin=%d,%d ipinCostAdder=%g "
              "biasCostFactor=%g initCurrCongWeight=%g histCongWeight=%g currCongWeightMult=%g "
-             "estimateWeight=%g perfProfile=%d heatmap=%s; set explicitly: %s\n",
+             "estimateWeight=%g perfProfile=%d heatmap=%s currCongWeightGrowth=%g revisitCheaper=%d "
+             "bbGrowEvery=%d bbGrowBy=%d; set explicitly: %s\n",
              backwards_max_iter, global_backwards_max_iter, bb_margin_x, bb_margin_y, ipin_cost_adder,
              bias_cost_factor, init_curr_cong_weight, hist_cong_weight, curr_cong_mult, estimate_weight,
-             int(perf_profile), heatmap.empty() ? "off" : heatmap.c_str(),
-             set_by_user.empty() ? "none" : set_by_user.c_str());
+             int(perf_profile), heatmap.empty() ? "off" : heatmap.c_str(), curr_cong_growth, int(revisit_cheaper),
+             bb_grow_every, bb_grow_by, set_by_user.empty() ? "none" : set_by_user.c_str());
 }
 
 NEXTPNR_NAMESPACE_END
