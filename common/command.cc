@@ -159,10 +159,22 @@ po::options_description CommandHandler::getGeneralOptions()
     general.add_options()("freq", po::value<double>(), "set target frequency for design in MHz");
     general.add_options()("timing-allow-fail", "allow timing to fail in design");
     general.add_options()("no-tmdriv", "disable timing-driven placement");
+    general.add_options()("set", po::value<std::vector<std::string>>(),
+                          "KEY=VALUE: a setting applied AFTER the design file is loaded, so it is not "
+                          "overwritten by the file's own settings; logged with the value it replaced "
+                          "(repeatable; booleans as 0/1)");
     general.add_options()("sdf", po::value<std::string>(), "SDF delay back-annotation file to write");
     general.add_options()("sdf-cvc", "enable tweaks for SDF file compatibility with the CVC simulator");
 
     return general;
+}
+
+// [dense] A setting's value as text, for the log lines below.
+static std::string dense_setting_str(const Property &p)
+{
+    if (p.is_string)
+        return p.str;
+    return std::to_string(p.as_int64());
 }
 
 void CommandHandler::setupContext(Context *ctx)
@@ -311,10 +323,40 @@ int CommandHandler::executeMain(std::unique_ptr<Context> ctx)
     if (vm.count("json")) {
         std::string filename = vm["json"].as<std::string>();
         std::ifstream f(filename);
+        // [dense] A design file's own "settings" are written over the ones
+        // the command line set (frontend_base.h, "Import settings"), so a
+        // placed design routed again with other options silently keeps the
+        // file's. Say which the file replaced.
+        auto before = ctx->settings;
         if (!parse_json(f, filename, ctx.get()))
             log_error("Loading design failed.\n");
+        for (auto &s : ctx->settings) {
+            auto b = before.find(s.first);
+            std::string key = s.first.c_str(ctx.get());
+            if (b != before.end() && !(b->second.is_string == s.second.is_string && b->second.str == s.second.str))
+                log_info("design file setting %s=%s replaces %s from the command line or its defaults\n",
+                         key.c_str(), dense_setting_str(s.second).c_str(), dense_setting_str(b->second).c_str());
+            else if (b == before.end() && key.rfind("router2/", 0) == 0)
+                // router2 reports these as set explicitly; say where they came from
+                log_info("design file carries setting %s=%s\n", key.c_str(), dense_setting_str(s.second).c_str());
+        }
 
         customAfterLoad(ctx.get());
+    }
+
+    // [dense] --set KEY=VALUE, after the design file, so the command line
+    // has the last word, and the log records what each one replaced.
+    if (vm.count("set")) {
+        for (auto &kv : vm["set"].as<std::vector<std::string>>()) {
+            auto eq = kv.find('=');
+            if (eq == std::string::npos || eq == 0)
+                log_error("--set takes KEY=VALUE, got '%s'\n", kv.c_str());
+            std::string key = kv.substr(0, eq), value = kv.substr(eq + 1);
+            auto found = ctx->settings.find(ctx->id(key));
+            std::string was = found == ctx->settings.end() ? "unset" : dense_setting_str(found->second);
+            ctx->settings[ctx->id(key)] = value;
+            log_info("--set %s=%s (was %s)\n", key.c_str(), value.c_str(), was.c_str());
+        }
     }
 
 #ifndef NO_PYTHON
