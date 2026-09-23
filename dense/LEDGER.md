@@ -172,3 +172,51 @@ and e2cd46e (phase timing) both MATCH the pinned binary's blinky FASM. The
 d47beff build compiled but never finished its control: a `pkill -f` whose
 pattern also matched the command running it ended the build script and the
 session. Its directory carries a SUPERSEDED note; nothing was run on it.
+
+## 2026-09-23 - the bench validated end to end, and where an iteration's time goes
+
+**The validation pair**, 0.9.6-10-gb5271f45 (control MATCH), `--input
+netlist`, capped at two iterations, from 15:04:
+
+| run | settings | placement | overuse after iterations 1, 2 |
+|---|---|---|---|
+| base | none | IDENTICAL, 26 lines | 340,836 (10 min); 98,546 (79 min) |
+| diag2 | `router2/heatmap` by `--set-route` | IDENTICAL, 26 lines | 340,836 (10 min); 98,546 (80 min) |
+| reference | the pinned binary, in memory, 2026-09-23 | the frozen placement | 340,836; 98,546; 74,578 |
+
+Both match the reference to the wire - wires 3,884,647 and 4,346,409,
+overused 264,619 and 93,732. So this branch's default build routes cft-fp256's
+board netlist exactly as 0.9.6 does, `--set-route` changes neither the
+placement nor the routing when it sets what only reports, and a variant's
+curve can now be read against the reference's directly. (Both runs stopped
+at the cap by router2's own "failed to converge" error, which bench.sh reads
+as the cap it is.)
+
+**Where the time goes.** The phase line, per iteration:
+
+    iteration 1, 645 s   quadrants 198,919 nets 193 s | halves 18,032 nets 66 s, 16,277 nets 140 s |
+                         one thread 34,895 nets 245 s | 32 retried 1 s
+    iteration 2, 4,106 s quadrants 83,865 nets 304 s  | halves 10,767 nets 96 s, 13,117 nets 1,755 s |
+                         one thread 3,409 nets 1,929 s | 32 retried 22 s
+
+In the second iteration 88% of the time is two phases: the nets that cross
+the chip's horizontal midline within one half - tall nets, two threads,
+about 0.21 s a net - and the nets that cross both midlines, on one thread,
+about 0.57 s a net, against 0.013 s a net in the quadrants. It is the
+vertical congestion the heatmaps show, seen from the clock. Two levers
+follow: more column strips, so tall nets route in parallel; and cheaper
+searches through congested channels.
+
+**The congestion moves between wire types.** diag2, by type:
+
+    iteration 1   VQUAD 109,008   SINGLE 34,696   PINFEED 31,553   LUTINPUT 31,553   HQUAD 29,629   DOUBLE 25,067
+    iteration 2   BENTQUAD 28,833 DOUBLE 20,947   VQUAD 19,960     VLONG 9,585       SINGLE 9,455   HQUAD 4,209
+
+The vertical quads' overuse fell by four fifths and the bent quads took the
+lead: the negotiation moves the vertical demand onto other resources rather
+than dissolving it.
+
+**The variants** (revisit, grow15, notiming, altweights, each capped at five
+iterations with the heatmap) were launched from 16:47 by a script that
+first checked both runs' summaries - placement IDENTICAL and the curve
+1:340836 2:98546 - and would have launched nothing otherwise.
