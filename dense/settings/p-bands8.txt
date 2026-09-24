@@ -1,0 +1,7 @@
+# The frozen placement's netlist in eight horizontal bands by recursive
+# min-cut bisection (dense/bands.py at 05c2900, levels 3, balance 0.02, 8
+# passes; bands/20260924-b8-frozen): 7,524 at the middle row, 7,457 and
+# 3,772 at the quarters, 5,241 / 6,955 / 5,325 / 2,961 at the eighths. A
+# band is 43 slice rows; chains taller than 39 are left free. For
+# dense/place.sh; run at several seeds.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b8-frozen/bands.txt
