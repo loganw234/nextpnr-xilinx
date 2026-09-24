@@ -203,7 +203,10 @@ class HeAPPlacer
         heap_runs.push_back(all_celltypes);
         // The main HeAP placer loop
         log_info("Running main analytical placer.\n");
-        while (stalled < 5 && (solved_hpwl <= legal_hpwl * 0.8)) {
+        log_info("HeAP convergence: max_stall=%d min_iter=%d keep=%s\n", cfg.max_stall, cfg.min_iter,
+                 cfg.keep_last ? "last" : "best");
+        int kept_iter = -1;
+        while ((stalled < cfg.max_stall && (solved_hpwl <= legal_hpwl * 0.8)) || iter < cfg.min_iter) {
             // Alternate between particular Bel types and all bels
             for (auto &run : heap_runs) {
                 auto run_startt = std::chrono::high_resolution_clock::now();
@@ -253,16 +256,21 @@ class HeAPPlacer
             if (cfg.timing_driven)
                 get_criticalities(ctx, &net_crit);
 
-            if (legal_hpwl < best_hpwl) {
+            const bool improved = legal_hpwl < best_hpwl;
+            if (improved) {
                 best_hpwl = legal_hpwl;
                 stalled = 0;
-                // Save solution
+            } else {
+                ++stalled;
+            }
+            // Save the solution: the best so far (upstream), or every one,
+            // so the last is kept ([dense] NEXTPNR_PLACER_KEEP=last)
+            if (improved || cfg.keep_last) {
                 solution.clear();
                 for (auto cell : sorted(ctx->cells)) {
                     solution.emplace_back(cell.second, cell.second->bel, cell.second->belStrength);
                 }
-            } else {
-                ++stalled;
+                kept_iter = iter + 1;
             }
             for (auto &cl : cell_locs) {
                 cl.second.legal_x = cl.second.x;
@@ -272,6 +280,7 @@ class HeAPPlacer
             ++iter;
         }
 
+        log_info("HeAP kept iteration #%d of %d (%s)\n", kept_iter, iter, cfg.keep_last ? "the last" : "the best");
         // Apply saved solution
         for (auto &sc : solution) {
             CellInfo *cell = std::get<0>(sc);
@@ -1989,6 +1998,26 @@ PlacerHeapCfg::PlacerHeapCfg(Context *ctx)
     hpwl_scale_y = 1;
     spread_scale_x = 1;
     spread_scale_y = 1;
+
+    // [dense] convergence knobs; each refused by name when malformed
+    auto env_int = [](const char *name, int lo, int dflt) {
+        const char *e = getenv(name);
+        if (e == nullptr)
+            return dflt;
+        char *end = nullptr;
+        long v = strtol(e, &end, 10);
+        if (*e == '\0' || *end != '\0' || v < lo || v > 1000)
+            log_error("%s='%s' is not a whole number from %d to 1000\n", name, e, lo);
+        return int(v);
+    };
+    max_stall = env_int("NEXTPNR_PLACER_MAX_STALL", 1, 5);
+    min_iter = env_int("NEXTPNR_PLACER_MIN_ITER", 0, 0);
+    if (const char *e = getenv("NEXTPNR_PLACER_KEEP")) {
+        if (std::string(e) == "last")
+            keep_last = true;
+        else if (std::string(e) != "best")
+            log_error("NEXTPNR_PLACER_KEEP='%s' is not best or last\n", e);
+    }
 }
 
 NEXTPNR_NAMESPACE_END

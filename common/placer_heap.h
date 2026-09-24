@@ -46,6 +46,18 @@ struct PlacerHeapCfg
     int hpwl_scale_x, hpwl_scale_y;
     int spread_scale_x, spread_scale_y;
 
+    // [dense] How long the analytic loop runs, and which of its legal
+    // placements it keeps. Upstream: stop after max_stall iterations
+    // without a better legal wirelength (5), no minimum, keep the best.
+    // keep_last keeps the final iteration's instead - the most converged,
+    // not the shortest. Read from the environment (NEXTPNR_PLACER_MAX_STALL,
+    // NEXTPNR_PLACER_MIN_ITER, NEXTPNR_PLACER_KEEP=best|last), as the base
+    // reads its other HeAP knobs: a setting added before packing moves the
+    // placement through name interning (dense/LEDGER.md, 2026-09-23), a
+    // variable does not, so a run at the defaults places as upstream does.
+    int max_stall = 5, min_iter = 0;
+    bool keep_last = false;
+
     // These cell types will be randomly locked to prevent singular matrices
     std::unordered_set<IdString> ioBufTypes;
     // These cell types are part of the same unit (e.g. slices split into
