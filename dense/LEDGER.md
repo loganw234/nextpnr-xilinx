@@ -558,3 +558,79 @@ and 8, each at three seeds.
 `altw-block1` routes the lucky draw. What it shows is still worth
 having, since it tests whether a lower peak routes better. But it is not
 a placement anyone can have by asking for the pull.
+
+## 2026-09-24 - the router's overuse follows the vertical crossings; no placer knob moves them past the seed's own spread; the netlist needs half of them
+
+**The first check of the placement metric.** `altw-beta30` routed the
+spread placement (NEXTPNR_PLACER_BETA 0.3) with altweights' prices. Its
+first iteration left 40,447 overuse where altweights left 28,199 on the
+frozen placement, 43% more, in 5 h 57 min against 3 h 46. Its peak
+middle-row crossings were 15,449 against 13,879, 11% more. That is the
+direction the metric predicted, and a large response to a small change,
+as expected when the demand sits at the vertical wiring's capacity: the
+overuse is only what lies above it. One point, not a law. The run was
+stopped at 09:30, its question answered.
+
+**Partitioned routing gives no time back.** `altw-part` (alt-weights and
+`router2/partition`) took 4 h 05 min for its first iteration against
+altweights' 3 h 46, with overuse 29,037 against 28,199. Its grids routed
+97% of the nets in parallel in about an hour. The 3,257 nets that no
+cell holds took 11,306 s on one thread, 3.5 s each. The time is in the
+chip-spanning nets, routed last into a crowded fabric, and a partition
+cannot share them out. Stopped at 06:11.
+
+**Every placer knob tried, on three draws each.** The mean of the three
+draws' peak middle-row crossings:
+
+| configuration | peak middle-row crossings | mean |
+|---|---|---|
+| default placer | 13,879 / 15,038 / 13,251 | 14,056 |
+| block pull, weight 1 | 12,380 / 16,936 / 15,444 | 14,920 |
+| block pull from iteration 1, over 5 (f38f2f7) | 14,948 / 17,109 / 15,733 | 15,930 |
+| vertical weight 4 (dd2bc97) | 15,155 / 14,729 / 13,697 | 14,527 |
+| vertical weight 8 | 16,317 / 15,547 / 18,093 | 16,652 |
+
+None is below the default's mean. The block pull gathers the lanes at
+every seed, yet the crossings do not fall: gathered lanes stacked one
+above another send their shared operand and result buses across the
+middle instead.
+
+**What the netlist itself needs.** `dense/bisect.py`: FM from the frozen
+placement's own split at row 175 cuts 7,467 nets where the placement
+cuts 14,215, with the halves at 49.4/50.6. `dense/bands.py` does it
+recursively, several starts a split: 7,524 at the middle row, 7,457 and
+3,772 at the quarter rows. The start matters a great deal (one start gave
+12,654 at the middle) - FM's single level. A placement that respected
+such bands would ask the middle rows' vertical wiring for about half of
+what HeAP's placements ask.
+
+**Applying the bands: four faults, each caught before a result was
+recorded.**
+
+1. The band file carried 715 names JSON-escaped ("\\u_krnl"), and
+   `NEXTPNR_DENSE_BANDS` refused the file by name (a1ee2a4 decodes names
+   and parents).
+2. The 7-series grid counts rows downward (slice row 0 is grid row 363),
+   so each band's rectangle ran from its higher row to its lower and was
+   empty. The first banded placement aborted in HeAP's first solve (rc
+   134). ab98706 takes each band's lowest-to-highest grid rows and counts
+   each band's sites before use.
+3. Four carry chains are 90 CARRY4s, taller than an 87-row band, and the
+   legaliser refused them. 6bfb608 leaves a chain taller than its band
+   unconstrained: 3,599 cells in the 4 chains.
+4. A 66-row chain whose root could only sit in the far 23 rows of its
+   band was never searched there. Upstream's legaliser centres its window
+   on the cell with a half-width of at most half the region, and the
+   solver had left the root at the near edge. f758d8a keeps a
+   region-constrained cell's window inside its region. Only cells with a
+   region are affected.
+
+The runs these stopped carry REFUSED or CRASHED notes. One note was
+first written as "stopped by decision" for a run that had already
+aborted; it was corrected to CRASHED within minutes.
+
+**The sweep beside it.** cft-fp256's U50 sweep missed 175 MHz with the
+standard recipe (-0.171 ns). altweights and altw-est175 were stopped at
+05:42, both climbing (28,199 / 28,761 / 31,319, and 40,476 / 43,843),
+and the memory went to the sweep's retry. altw-grow15 (the price rising
+1.5 times an iteration) routes beside it.
