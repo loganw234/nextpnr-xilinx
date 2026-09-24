@@ -634,3 +634,38 @@ standard recipe (-0.171 ns). altweights and altw-est175 were stopped at
 05:42, both climbing (28,199 / 28,761 / 31,319, and 40,476 / 43,843),
 and the memory went to the sweep's retry. altw-grow15 (the price rising
 1.5 times an iteration) routes beside it.
+
+## 2026-09-24 - the banded placement: every draw below every default draw, and 11% less wirelength
+
+f758d8a with `NEXTPNR_DENSE_BANDS` at bands/20260924-b4-frozen-v2 (four
+bands, the four 90-row chains left free), `dense/place.sh` at three
+seeds:
+
+| placement | wirelength | nets across row 175 | peak row band | peak column band | kept |
+|---|---|---|---|---|---|
+| default placer, default seed | 8,568,341 | 14,120 | 13,879 | 9,208 | #6 of 11 |
+| default placer, seed 2 | 8,514,453 | 12,088 | 15,038 | 9,400 | #6 of 11 |
+| default placer, seed 3 | 8,943,161 | 12,801 | 13,251 | 10,183 | #6 of 11 |
+| **bands, default seed** | **7,703,566** | **7,820** | **11,361** | 12,280 | #10 of 15 |
+| **bands, seed 2** | **7,567,994** | **8,460** | **12,315** | 9,244 | #13 of 18 |
+| **bands, seed 3** | **7,898,171** | **9,545** | **12,361** | 10,702 | #11 of 16 |
+
+- The crossings at the middle row fall by a third, and every banded
+  draw's peak is below every default draw's (means 12,012 against
+  14,056).
+- The wirelength falls 11%, so the bands help the analytic placer as
+  well as constrain it.
+- The peak moves into band 1 (rows 100 to 150): the nets inside it, and
+  those passing through it between bands 0 and 2 or 3. That is where
+  more levels, or different band heights, would act next.
+- The lanes are no more gathered than before (a lane's middle 80% over
+  158 to 265 rows). The bands cut the crossings by where they put the
+  logic, not by gathering blocks.
+
+Two routes of the default-seed placement, launched at 10:22 and 10:23
+from 06dc5f4 on the f758d8a binary, capped at five iterations, each with
+`--expect-placement` at p-bands4d-sd:
+
+- `altw-bands4`, altweights' prices (to compare with altweights' 28,199);
+- `base-bands4`, the default prices (to compare with the reference's
+  340,836 / 98,546 / 74,578 / 66,479).
