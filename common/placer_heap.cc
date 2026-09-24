@@ -1295,8 +1295,21 @@ class HeAPPlacer
                                                   1);
                 }
 
-                int nx = ctx->rng(2 * rx + 1) + std::max(cell_locs.at(ci->name).x - rx, 0);
-                int ny = ctx->rng(2 * ry + 1) + std::max(cell_locs.at(ci->name).y - ry, 0);
+                // [dense] A region-constrained cell's window is kept inside its
+                // region. Upstream centres it on the cell, with a half-width of
+                // at most half the region, so a cell the solver left at one
+                // edge searched half its region and the outside: a 66-row
+                // chain whose root could only sit at the far edge of an 87-row
+                // band was never found (2026-09-24). Only cells with a region
+                // are affected.
+                int wx = cell_locs.at(ci->name).x, wy = cell_locs.at(ci->name).y;
+                if (ci->region != nullptr) {
+                    const auto &bb = constraint_region_bounds[ci->region->name];
+                    wx = (bb.x1 - bb.x0 < 2 * rx) ? (bb.x0 + bb.x1) / 2 : std::max(bb.x0 + rx, std::min(bb.x1 - rx, wx));
+                    wy = (bb.y1 - bb.y0 < 2 * ry) ? (bb.y0 + bb.y1) / 2 : std::max(bb.y0 + ry, std::min(bb.y1 - ry, wy));
+                }
+                int nx = ctx->rng(2 * rx + 1) + std::max(wx - rx, 0);
+                int ny = ctx->rng(2 * ry + 1) + std::max(wy - ry, 0);
 
                 iter++;
                 iter_at_radius++;
