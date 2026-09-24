@@ -1,0 +1,13 @@
+# Everything that has helped, together: the aligned 8-band placement
+# (bands/20260924-a8-frozen), mainline's alt-weights prices, and the
+# congestion price multiplied by 1.5 after each iteration. alt-weights on
+# the bands stalled at 9,926 / 5,894 / 5,654 (only history moving); the
+# rising price took altw-grow15 on the frozen placement from 28,199 to
+# 26,625 where plain alt-weights climbed. Route with --expect-placement at
+# p-bandsA8-sd; compare with altw-bandsA8.
+router2/initCurrCongWeight=5.0
+router2/histCongWeight=0.5
+router2/currCongWeightMult=0.0
+router2/estimateWeight=1.0
+router2/currCongWeightGrowth=1.5
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-a8-frozen/bands.txt
