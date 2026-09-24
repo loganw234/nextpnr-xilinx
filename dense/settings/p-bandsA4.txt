@@ -1,0 +1,5 @@
+# Four min-cut bands on the clock rows' 25-row groups (dense/bands.py at
+# aa2e4b7, levels 2; bands/20260924-a4-frozen): rows 0-75, 75-175, 175-250,
+# 250-350; 7,524 nets cut at row 175, 7,344 at 75, 4,366 at 250. For
+# dense/place.sh; run at several seeds.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-a4-frozen/bands.txt

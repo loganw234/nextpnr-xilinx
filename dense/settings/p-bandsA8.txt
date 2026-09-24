@@ -1,0 +1,4 @@
+# Eight min-cut bands on the 25-row groups (dense/bands.py at aa2e4b7,
+# levels 3; bands/20260924-a8-frozen). For dense/place.sh; run at several
+# seeds.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-a8-frozen/bands.txt
