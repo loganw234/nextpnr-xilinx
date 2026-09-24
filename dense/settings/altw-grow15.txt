@@ -1,0 +1,12 @@
+# Mainline's alt-weights prices with the congestion price multiplied by 1.5
+# after each iteration: 5.0, 7.5, 11.3, 16.9, 25.3 by the fifth, where the
+# profile keeps it at 5.0 (its addition is 0.0). altweights went from 28,199
+# overuse after its first iteration to 28,761 after its second - flat, with
+# only the history price (0.5 a unit a round) moving. This asks whether a
+# rising price is what breaks that plateau; grow15 is the same factor on the
+# defaults' prices.
+router2/initCurrCongWeight=5.0
+router2/histCongWeight=0.5
+router2/currCongWeightMult=0.0
+router2/estimateWeight=1.0
+router2/currCongWeightGrowth=1.5
