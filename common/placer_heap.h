@@ -69,6 +69,13 @@ struct PlacerHeapCfg
     // default) is upstream. NEXTPNR_PLACER_BLOCK_WEIGHT / _DEPTH / _MIN.
     float block_weight = 0;
     int block_depth = 4, block_min = 200;
+    // When the pull acts: from HeAP iteration block_from on (-1, the
+    // default, is every solve, the initial ones included), rising to its
+    // full weight over block_ramp iterations (0: at once).
+    // NEXTPNR_PLACER_BLOCK_FROM / _RAMP. At the start every block's mean is
+    // the mean of a random placement, near the chip's middle, and a pull
+    // there gathers every block into one heap (2026-09-24, dense/LEDGER.md).
+    int block_from = -1, block_ramp = 0;
 
     // These cell types will be randomly locked to prevent singular matrices
     std::unordered_set<IdString> ioBufTypes;

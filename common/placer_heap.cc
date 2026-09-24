@@ -627,20 +627,24 @@ class HeAPPlacer
                 kept_cells += block_size[i];
             }
         std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return block_size[a] > block_size[b]; });
-        log_info("HeAP blocks: weight %.3f; %d instances named at depth %d, %d of them with at least %d of the %d "
-                 "placed cells, holding %d\n",
-                 cfg.block_weight, int(block_names.size()), cfg.block_depth, kept, cfg.block_min,
-                 int(place_cells.size()), kept_cells);
+        log_info("HeAP blocks: weight %.3f from iteration %d over %d; %d instances named at depth %d, %d of them with "
+                 "at least %d of the %d placed cells, holding %d\n",
+                 cfg.block_weight, cfg.block_from, cfg.block_ramp, int(block_names.size()), cfg.block_depth, kept,
+                 cfg.block_min, int(place_cells.size()), kept_cells);
         for (int k = 0; k < int(order.size()) && k < 12; k++)
             log_info("    %6d  %s\n", block_size[order[k]], block_names[order[k]].c_str());
     }
 
     // [dense] Tie each solved cell of a block to the block's mean position:
     // a two-pin net to a point, stamped like the anchors below.
-    void stamp_block_pull(EquationSystem<double> &es, bool yaxis)
+    void stamp_block_pull(EquationSystem<double> &es, bool yaxis, int iter)
     {
-        if (cfg.block_weight <= 0 || cell_block.empty())
+        if (cfg.block_weight <= 0 || cell_block.empty() || iter < cfg.block_from)
             return;
+        // the share of the weight at this iteration (iter is -1 for the
+        // initial solves and the first of the main loop)
+        const double share =
+                cfg.block_ramp > 0 ? std::min(1.0, double(iter - cfg.block_from + 1) / cfg.block_ramp) : 1.0;
         std::vector<int> row_block(solve_cells.size(), -1);
         std::vector<double> sum(block_names.size(), 0);
         std::vector<int> cnt(block_names.size(), 0);
@@ -660,7 +664,8 @@ class HeAPPlacer
             const auto &cl = cell_locs.at(solve_cells.at(row)->name);
             double centre = sum[b] / cnt[b];
             double dist = std::abs((yaxis ? cl.y : cl.x) - centre);
-            double weight = cfg.block_weight / std::max<double>(1, (yaxis ? cfg.hpwl_scale_y : cfg.hpwl_scale_x) * dist);
+            double weight =
+                    share * cfg.block_weight / std::max<double>(1, (yaxis ? cfg.hpwl_scale_y : cfg.hpwl_scale_x) * dist);
             es.add_coeff(row, row, weight);
             es.add_rhs(row, weight * centre);
         }
@@ -932,7 +937,7 @@ class HeAPPlacer
                 es.add_rhs(row, weight * l_pos);
             }
         }
-        stamp_block_pull(es, yaxis);
+        stamp_block_pull(es, yaxis, iter);
     }
 
     // Build the system of equations for either X or Y
@@ -2123,6 +2128,8 @@ PlacerHeapCfg::PlacerHeapCfg(Context *ctx)
     min_iter = env_int("NEXTPNR_PLACER_MIN_ITER", 0, 0);
     block_depth = env_int("NEXTPNR_PLACER_BLOCK_DEPTH", 1, 4);
     block_min = env_int("NEXTPNR_PLACER_BLOCK_MIN", 1, 200);
+    block_from = env_int("NEXTPNR_PLACER_BLOCK_FROM", -1, -1);
+    block_ramp = env_int("NEXTPNR_PLACER_BLOCK_RAMP", 0, 0);
     if (const char *e = getenv("NEXTPNR_PLACER_BLOCK_WEIGHT")) {
         char *end = nullptr;
         double v = strtod(e, &end);

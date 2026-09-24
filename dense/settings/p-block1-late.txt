@@ -1,0 +1,7 @@
+# The block pull at weight 1, acting from HeAP's second main iteration and
+# rising to full weight over five: connectivity alone sets the first
+# arrangement, then each block is gathered where it lies. For
+# dense/place.sh; run at several seeds (p-block1 varied widely by seed).
+NEXTPNR_PLACER_BLOCK_WEIGHT=1
+NEXTPNR_PLACER_BLOCK_FROM=1
+NEXTPNR_PLACER_BLOCK_RAMP=5
