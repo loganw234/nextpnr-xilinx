@@ -1,0 +1,14 @@
+# Mainline's alt-weights prices on a placement spread further. The base's
+# HeAP spreads a region of the chip once its cells exceed beta times its
+# sites; xilinx/arch.cc sets beta 0.4 for the 7-series, and its comment
+# suggests 0.2 to 0.3 to de-congest. This design's LUTs fill 39% of the LUT
+# sites, so at 0.3 no region meets the target and the spreading reaches
+# across the whole chip. The frozen placement packs 4.1 LUTs into each used
+# slice in the middle rows, where the overuse is, against 2.7 to 3.4 at the
+# top and bottom (dense/LEDGER.md, 2026-09-24). The placement changes by
+# design: compare with altweights, whose prices these are.
+router2/initCurrCongWeight=5.0
+router2/histCongWeight=0.5
+router2/currCongWeightMult=0.0
+router2/estimateWeight=1.0
+NEXTPNR_PLACER_BETA=0.3

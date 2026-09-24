@@ -59,8 +59,11 @@ summary says IDENTICAL or where it differs. So runs differ only in the
 binary and the settings. Each run's directory holds its provenance, the
 timestamped log, the overuse curve, the machine's load, and a summary read
 from the log rather than from the exit code. The settings files in
-`dense/settings/` are `KEY=VALUE` lines, passed to `--set`; `--heatmap`
-adds the per-iteration congestion files.
+`dense/settings/` are `KEY=VALUE` lines: a `router2/` key goes to
+`--set-route`, a `NEXTPNR_` name into the run's environment, anything else
+to `--set`. `--heatmap` adds the per-iteration congestion files. A run
+whose settings move the placer is expected to place differently, and its
+summary says so; compare its curve with that in mind.
 
 ## What this branch adds, so far
 
@@ -97,7 +100,10 @@ adds the per-iteration congestion files.
   `NEXTPNR_ARC_MAX_VISIT`, `NEXTPNR_SKIP_FAILED_ARCS` (which accepts a
   partial route - `bench.sh` refuses to run with it set) and
   `NPNR_ROUTER1_RECHECK`. `bench.sh` records every `NEXTPNR_` and `NPNR_`
-  variable it passes.
+  variable it passes, with its value (by name alone until 2026-09-24).
+  For the 7-series the HeAP knobs are the variables and nothing else:
+  `xilinx/arch.cc` sets `beta` 0.4 and `alpha` 0.08 over whatever
+  `placerHeap/beta` and `placerHeap/alpha` said.
 - **0.9.6 does not route a placed design it wrote the way it routes the same
   design in memory.** Reloaded with `--no-pack --no-place`, cft-fp256's
   placement has an arc no search can reach, which the in-memory flow routes;

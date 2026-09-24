@@ -33,9 +33,13 @@
 # other key is --set, applied after the design loads (a placed design's own
 # settings are otherwise written over the command line's), and the placement
 # check reports what it did. Both log what they replaced. The 0.9.6 base can
-# take neither: its Python bindings do not reach ctx->settings. The file is
-# copied into the run, and what router2 says it APPLIED (the "router2
-# settings:" line) is what the summary records, not the file.
+# take neither: its Python bindings do not reach ctx->settings. A NEXTPNR_
+# name is set in the run's environment instead: the base's HeAP knobs for
+# the 7-series (NEXTPNR_PLACER_BETA, NEXTPNR_SPREAD_SCALE_X/_Y,
+# NEXTPNR_PLACER_ALPHA, xilinx/arch.cc) are read from nowhere else - its
+# own assignments overwrite placerHeap/beta. The file is copied into the
+# run, and what the binary says it APPLIED (the "router2 settings:" and
+# "HeAP congestion knobs:" lines) is what the summary records, not the file.
 #
 # EACH RUN gets DIR/runs/<yyyymmdd-hhmm>-NAME/:
 #   PROVENANCE.txt  binary version and hash, its BUILD-INFO, the settings file
@@ -102,6 +106,7 @@ summarize () {
     echo "$NAME: $OUTCOME"
     echo "binary     $VERSION"
     echo "placement  $PLACEMENT"
+    echo "placer     $(grep -m1 'HeAP congestion knobs:' "$RUN/route.log" | sed 's/.*HeAP congestion knobs: //')"
     echo "applied    $(grep -m1 'router2 settings:' "$RUN/route.log" | sed 's/.*router2 settings: //' || echo 'NOT PRINTED - a binary without this branch')"
     echo "caps       $(grep -m1 'router2 caps:' "$RUN/route.log" | sed 's/.*router2 caps: //')"
     echo "curve      $(tail -n +2 "$RUN/curve.tsv" | awk -F'\t' '{printf "%s%s:%s@%smin", sep, $3, $6, $2; sep=" "}')"
@@ -160,21 +165,38 @@ SETCOPY=$(mktemp)
 trap 'rm -f "$SETCOPY"' EXIT
 if [ -n "$SETTINGS" ]; then cp "$SETTINGS" "$SETCOPY"
 else echo "# no settings: every router2 setting at its default" > "$SETCOPY"; fi
-SETARGS=""
+SETARGS=""; FILEENV=()
 while read -r line; do
   line=${line%%#*}; line=$(echo "$line" | tr -d '[:space:]')
   [ -n "$line" ] || continue
   [[ "$line" =~ ^[A-Za-z0-9_./-]+=[A-Za-z0-9_.,+-]+$ ]] || die "settings line is not KEY=VALUE: '$line'"
   # A router setting goes in after placement: a setting added before packing
   # changes the annealer's placement even when only the router reads it
-  # (dense/LEDGER.md, 2026-09-23). Anything else is --set, and the placement
-  # check says what it did.
+  # (dense/LEDGER.md, 2026-09-23). A NEXTPNR_ name is the run's environment:
+  # the base reads some placer knobs from nowhere else. Anything else is
+  # --set, and the placement check says what it did.
   case "$line" in
-    router2/*) SETARGS="$SETARGS --set-route $line" ;;
-    *)         SETARGS="$SETARGS --set $line" ;;
+    router2/*)  SETARGS="$SETARGS --set-route $line" ;;
+    NEXTPNR_ROUTER2_MAX_ITER=*) die "the iteration cap is --max-iter, not a settings line" ;;
+    NEXTPNR_*)  FILEENV+=("$line") ;;
+    *)          SETARGS="$SETARGS --set $line" ;;
   esac
 done < "$SETCOPY"
 [ "$HEATMAP" -eq 0 ] || SETARGS="$SETARGS --set-route router2/heatmap=heat"
+
+# The run's environment: the cap, the settings file's NEXTPNR_ lines, and
+# every NEXTPNR_/NPNR_ variable of the caller's - each passed and recorded
+# with its value. A name both the caller and the file set is refused.
+ENVARGS=()
+[ -z "$MAX_ITER" ] || ENVARGS+=(-e "NEXTPNR_ROUTER2_MAX_ITER=$MAX_ITER")
+for kv in ${FILEENV[@]+"${FILEENV[@]}"}; do ENVARGS+=(-e "$kv"); done
+while IFS='=' read -r k v; do
+  [ "$k" = NEXTPNR_ROUTER2_MAX_ITER ] && [ -n "$MAX_ITER" ] && continue
+  for kv in ${FILEENV[@]+"${FILEENV[@]}"}; do
+    [ "${kv%%=*}" != "$k" ] || die "$k is set both in the environment and in the settings file"
+  done
+  ENVARGS+=(-e "$k=$v")
+done < <(env | grep -E '^(NEXTPNR|NPNR)_' || true)
 
 RUN="$BENCH/runs/$(date +%Y%m%d-%H%M)-$NAME"
 [ ! -e "$RUN" ] || die "$RUN exists"
@@ -182,12 +204,6 @@ mkdir -p "$RUN"
 cp "$SETCOPY" "$RUN/settings.txt"
 
 VERSION=$(docker run --rm -v "$BIN":/bindense:ro "$IMAGE" /bindense/nextpnr-xilinx --version 2>&1 | head -1)
-ENVARGS=()
-[ -z "$MAX_ITER" ] || ENVARGS+=(-e "NEXTPNR_ROUTER2_MAX_ITER=$MAX_ITER")
-while IFS='=' read -r k _; do
-  [ "$k" = NEXTPNR_ROUTER2_MAX_ITER ] && [ -n "$MAX_ITER" ] && continue
-  ENVARGS+=(-e "$k")
-done < <(env | grep -E '^(NEXTPNR|NPNR)_' || true)
 CMD="nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin --xdc /bench/placed.xdc --json /bench/$DESIGN$FLOW --freq 100 --timing-allow-fail$SETARGS"
 {
   echo "dense bench run $NAME, $(date -Is), host $(hostname)"
