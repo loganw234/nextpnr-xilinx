@@ -405,3 +405,111 @@ and 01:07 were relaunched as `altw-part` at 01:43, 51 minutes after the
 first; the entry above rounds that to an hour. `part` waits in a launcher
 for the sweep to finish, and `altw-part` has routed since 02:04 with the
 partition applied, its placement IDENTICAL.
+
+## 2026-09-24 - the placement is where the overuse comes from: every lane spread over the chip's height, and a placer that stops early
+
+**The vertical demand.** `dense/placement_metrics.py` (cfe9141) reads a
+placed design and counts, from each net's box, the nets that must cross
+each row boundary and each column boundary (nets above 2,000 cells left
+out). On the frozen placement:
+
+    nets across a row boundary, mean per 25-row band from the bottom:
+      2,062  4,822  8,290  10,917  13,319  13,653  13,708  13,879  12,556  11,612  9,671  7,907  5,892  3,267
+    nets across a column boundary, peak 12-column band: 9,208
+
+About 13,800 nets cross each boundary in the middle rows, and they share
+the vertical wiring of some 77 CLB columns. The at most 9,208 crossing a
+column boundary share the horizontal wiring of 350 rows. Per track, the
+vertical demand in the middle is several times the horizontal. The
+overuse is on vertical wires in those rows (the entries above), so the
+two agree.
+
+**Who crosses.** Most cells carry names ABC generated, but most nets
+keep their RTL paths. So each cell was given the block its nets name
+most often. The nets crossing row 175 are mostly INSIDE a lane: fp256's
+own 1,697, fp32 lanes' 964, fp64's 738, fp128's 595, against a few
+hundred between blocks. Their median vertical span is 69 rows, and 32%
+span more than 100. Each lane's logic lies spread over most of the
+chip's height. The middle 80% of a lane's cells covers 253 rows for
+fp256, 236 for fp128, a median 210 for fp64 and 208 for fp32 - where a
+2,000-cell fp32 lane with 8-row carry chains would fit in some 25.
+Wide arithmetic is vertical on this fabric (fp256's 60-row carry
+chains), but not by that much.
+
+**The spreading experiment, measured before it routes.** altw-beta30's
+placement, reproduced with `--no-route --write` (trajectory IDENTICAL,
+29 lines): the middle rows' LUTs per used slice fell from 3.9-4.1 to
+3.6-3.8 and the edges' rose. But 15,532 nets cross row 175 against
+14,120 (median span 94 rows against 69), and the wirelength is 13%
+higher. Spreading thinned the dense rows and lengthened the nets that
+cross them. Its first routing iteration will show whether the crossing
+count predicts the router.
+
+**Why the lanes spread: the analytic placer stops early.** HeAP ends at
+iteration 11, five iterations after its best legal wirelength, and keeps
+iteration 6. At that point the solver's wirelength is 59% of the legal
+one; the loop's own target is 80%. The anchors that hold a spread
+placement are weak at iteration 6 (alpha x 6 = 0.48).
+
+**Two placer changes, each off by default:**
+
+- e279f69 `NEXTPNR_PLACER_MAX_STALL`, `_MIN_ITER` and `_KEEP=best|last`:
+  how long the loop runs and which legal placement it keeps. These are
+  environment variables, like the base's other HeAP knobs, because a
+  setting added before packing moves the placement through name
+  interning. Its control MATCHes blinky. At the defaults it places the
+  tile IDENTICALLY to the frozen placement (p-default).
+- efa4e31 `NEXTPNR_PLACER_BLOCK_WEIGHT` (with `_DEPTH`, `_MIN`): each
+  solved cell of a named block is tied to the block's mean position by a
+  two-pin net of that weight, every solve. Blocks are read from the net
+  names as above.
+
+`dense/place.sh` (cfe9141) places the bench netlist once, compares the
+trajectory with the frozen one, and runs the metrics. A placement takes
+minutes where a routing iteration takes hours, so placer changes are
+screened on these numbers and only the promising ones are routed.
+
+**The first placements** (efa4e31 and e279f69 binaries, `dense/place.sh`,
+metrics as above; "lane spread" is the rows holding the middle 80% of a
+lane's cells, median by bank):
+
+| placement | kept | wirelength | nets across row 175 | row bands' peak | column bands' peak | lane spread fp256 / fp128 / fp64 / fp32 |
+|---|---|---|---|---|---|---|
+| p-default (e279f69, no knobs) | #6 of 11 | 8,568,341 | 14,120 | 13,879 | 9,208 | 253 / 236 / 210 / 208 |
+| altw-beta30 (NEXTPNR_PLACER_BETA=0.3) | #10 of 15 | 9,709,979 | 15,532 | 15,449 | 9,127 | 246 / 238 / 243 / 213 |
+| p-stall20 | #6 of 26 | 8,568,884 | 14,111 | 13,885 | 9,210 | 254 / 235 / 208 / 208 |
+| p-min40-last | #40 of 40 | 9,570,948 | 15,203 | 15,496 | 8,980 | 254 / 243 / 241 / 202 |
+| **p-block1** (block weight 1) | #16 of 21 | **8,739,322** | **12,496** | **12,380** | 10,624 | **133 / 118 / 77 / 73** |
+| p-block4 (block weight 4) | #21 of 26 | 9,721,753 | 12,454 | 14,294 | 13,199 | 200 / 95 / 67 / 53 |
+
+- p-default's trajectory is IDENTICAL to the frozen placement's (26
+  lines): the new code places the tile exactly as upstream does at its
+  defaults.
+- Letting the loop run to 26 iterations changed nothing. Its legal
+  wirelength wanders between 8.8 and 10.2 million and never beats
+  iteration 6, so iteration 6 is kept.
+- Keeping the last of 40 iterations costs 12% wirelength and spreads the
+  lanes no less.
+- The block pull at weight 1 is what moves the placement. It gathers
+  each lane into a third to a half of the rows it spread over before, and
+  cuts the nets across the middle rows by 11% (14,120 to 12,496 at row
+  175; 13,879 to 12,380 at the peak band). The cost is 2% wirelength and 15% more
+  crossing the column boundaries, the direction with room to spare. At
+  weight 4 the small lanes are tighter still, but fp256 spreads out again
+  and the wirelength rises 13%.
+
+`altw-block1` routes p-block1's placement with altweights' prices. It was
+launched at 04:48 from 244b5fe on the efa4e31 binary, capped at three
+iterations, with `--expect-placement` (new in 244b5fe): its trajectory is
+compared with p-block1's, not with the frozen placement's. Its curve
+against altweights' 28,199 and 28,761 is the test of the whole reading.
+p-block05, p-block2 and p-block1-d5 (depth 5: fp256's sub-instances as
+blocks) follow as placements. place.sh now asks the kernel to take a
+placement first if memory runs out (`--oom-score-adj 1000`, fc6efac).
+The placements before that ran at 6 GB free beside a U50 build; their
+processes were marked by hand at 04:17.
+
+**Decisions.** `part` (partitioning at the default prices) was cancelled
+at 04:10. altw-part answers its question better, and its slot goes to
+routing the best placement. `altw-grow15`'s launcher had waited on
+`part`'s; it was restarted without that dependency.
