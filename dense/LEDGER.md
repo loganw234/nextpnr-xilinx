@@ -759,3 +759,27 @@ vertical sum above 100 and the peak row band:
   cap 30) route the aligned 8-band default-seed placement, from 13:55
   and 13:56 on the aa2e4b7 binary, each with `--expect-placement` at
   p-bandsA8-sd.
+
+## 2026-09-24 - eight bands route as four do; alt-weights stalls near 5,500 on the bands
+
+As of 15:55:
+
+| route | placement | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| base-bands4-long (default prices) | unaligned 4 bands | 301,534 | 61,437 | 26,839 | 18,628 | 15,118 |
+| base-bandsA8 (default prices) | aligned 8 bands | 300,109 | 61,208 | 27,048 | running | |
+| altw-bands4 (alt-weights, cap 5) | unaligned 4 bands | 9,926 | 5,894 | 5,654 | 5,575 | 5,506 |
+| altw-grow15 (alt-weights, price x1.5) | frozen | 28,199 | 26,625 | running | | |
+
+- base-bands4-long repeats base-bands4 to the wire through five
+  iterations and runs on (cap 40).
+- The aligned 8-band placement routes as the unaligned 4-band one does,
+  within 1% at each iteration. Its steadier RUDY across seeds buys no
+  better route than the good 4-band draw, whose RUDY (75,333) was the
+  lower of the two (103,292).
+- Alt-weights on the bands stalls: -41%, then -4%, -1.4% and -1.2% an
+  iteration. With the congestion price held at 5.0 only the history
+  moves. The rising price took altw-grow15 down where plain alt-weights
+  climbed (26,625 against 28,761 at iteration 2), so `altwg-bandsA8`
+  (8 bands, alt-weights, price x1.5 an iteration, cap 30, c2567cb)
+  began at 14:39.
