@@ -708,18 +708,33 @@ class HeAPPlacer
                 luts[a.first]++;
         }
         // each band must have room for what it was given: its sites counted,
-        // not assumed (an empty band crashed the placer, bd515f9)
+        // not assumed (an empty band crashed the placer, bd515f9), for every
+        // cell type - an 8-band file once put 57.5 RAMB36s where 55 fit.
+        // Six-input LUTs take one of a slice's four LUT positions (eight LUT
+        // bels); every other type, one bel of its own type. Necessary, not
+        // sufficient: RAMB36 and RAMB18 share their sites.
+        std::vector<std::map<IdString, int>> want(K);
+        for (auto &a : assign) {
+            auto c = ctx->cells.find(ctx->id(a.second));
+            if (c != ctx->cells.end() && c->second->region == ctx->region.at(region[a.first]).get())
+                want[a.first][c->second->type]++;
+        }
         for (int k = 0; k < K; k++) {
             const auto &bels = ctx->region.at(region[k])->bels;
-            int lut_bels = 0;
+            std::map<IdString, int> have;
             for (auto bel : bels)
-                if (ctx->getBelType(bel) == ctx->id("SLICE_LUTX"))
-                    lut_bels++;
-            // eight LUT bels a slice, of which four take a six-input LUT
-            if (bels.empty() || luts[k] > lut_bels / 2)
-                log_error("NEXTPNR_DENSE_BANDS: band %d (grid rows %d-%d) has %d bels, %d of them LUT bels, for %d "
-                          "LUTs\n",
-                          k, gy0[k], gy1[k], int(bels.size()), lut_bels, luts[k]);
+                have[ctx->getBelType(bel)]++;
+            if (bels.empty())
+                log_error("NEXTPNR_DENSE_BANDS: band %d (grid rows %d-%d) holds no bels\n", k, gy0[k], gy1[k]);
+            for (auto &w : want[k]) {
+                int room = have[w.first];
+                if (w.first == ctx->id("SLICE_LUTX"))
+                    room /= 2;
+                if (w.second > room)
+                    log_error("NEXTPNR_DENSE_BANDS: band %d (grid rows %d-%d) was given %d %s cells and has room for "
+                              "%d\n",
+                              k, gy0[k], gy1[k], w.second, w.first.c_str(ctx), room);
+            }
         }
         if (unknown > int(assign.size()) / 1000)
             log_error("NEXTPNR_DENSE_BANDS: %d of the %d cells '%s' names are not in this design - a file made from "

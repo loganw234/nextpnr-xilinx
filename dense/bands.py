@@ -284,9 +284,47 @@ def split(members, r0, r1):
                 break
         return side, first, cut(), w1, ram1
 
+    def repair_ram(side):
+        """FM keeps its moves within each side's RAM sites but not its start:
+        a start with more RAMs on a side than the side's rows hold ends that
+        way (rows 0-87.5 of the first 8-band file put 57.5 RAMB36s where 55
+        fit, 2026-09-24). Move that side's RAM vertices across, the ones whose
+        move cuts fewest nets first, until both sides fit."""
+        moved = 0
+        for s in (0, 1):
+            while True:
+                on = sum(ram[v] for v in members if side[v] == s)
+                if on <= ram_cap:
+                    break
+                cands = [v for v in members if side[v] == s and ram[v] and not fixed[v]]
+                if not cands:
+                    break
+                def cost(v):
+                    c = 0
+                    for e in vnets[v]:
+                        us = [u for u in nets[e] if u in mem]
+                        here = sum(1 for u in us if side[u] == s)
+                        if here == len(us):
+                            c += 1          # the net lies on this side: moving v cuts it
+                        elif here == 1:
+                            c -= 1          # v is its last pin here: moving v uncuts it
+                    return c
+                v = min(cands, key=cost)
+                side[v] = 1 - s
+                moved += 1
+        return moved
+
     best = None
     for label, s0 in starts:
         side, first, last, w1, ram1 = fm(dict(s0))
+        fixed_ram = repair_ram(side)
+        if fixed_ram:
+            w1 = sum(weight[v] for v in members if side[v] == 1)
+            ram1 = sum(ram[v] for v in members if side[v] == 1)
+            last = sum(1 for e in enets
+                       if (outside[e][0] + sum(1 for u in nets[e] if u in mem and side[u] == 0))
+                       and (outside[e][1] + sum(1 for u in nets[e] if u in mem and side[u] == 1)))
+            print(f"    (from {label}: {fixed_ram} RAM vertices moved to fit the RAM sites; cut now {last})")
         ok = lo <= w1 <= hi
         print(f"    from {label}: cut {first} -> {last}, top {100 * w1 / W:.1f}%{'' if ok else ' (unbalanced: not kept)'}")
         if ok and (best is None or last < best[2]):
