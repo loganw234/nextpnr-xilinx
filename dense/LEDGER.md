@@ -669,3 +669,50 @@ from 06dc5f4 on the f758d8a binary, capped at five iterations, each with
 - `altw-bands4`, altweights' prices (to compare with altweights' 28,199);
 - `base-bands4`, the default prices (to compare with the reference's
   340,836 / 98,546 / 74,578 / 66,479).
+
+## 2026-09-24 - the banded placement routes: a third of altweights' first-iteration overuse, in half the time; the default prices fall four times as fast
+
+The default-seed banded placement (p-bands4d-sd, f758d8a), routed from
+17:53 UTC. Each route's placement was checked IDENTICAL to p-bands4d-sd's
+(32 wirelen lines).
+
+| route | placement | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| reference (default prices) | frozen | 340,836 | 98,546 | 74,578 | 66,479 (~8.8 h) |
+| **base-bands4 (default prices)** | **bands** | **301,534** (11 min) | **61,437** (31 min) | **26,839** (65 min) | **18,628** (1 h 40 min) |
+| altweights | frozen | 28,199 (3 h 46) | 28,761 | 31,319 | stopped |
+| **altw-bands4 (alt-weights)** | **bands** | **9,926** (1 h 45) | running | | |
+
+- The banded placement's fourth iteration of the default prices leaves
+  72% less overuse than the frozen placement's, five times sooner. The
+  curve is still falling steeply (61,437; 26,839; 18,628).
+- Its remaining overuse is on short wires: DOUBLE 7,736, SINGLE 4,690,
+  BENTQUAD 3,534, VQUAD 1,362, HQUAD 482, VLONG 429. The long vertical
+  wires, 11,027 on VLONG alone after altweights' first iteration on the
+  frozen placement, are no longer where it is.
+- Alt-weights' first iteration on the bands leaves 9,926: a third of the
+  frozen placement's 28,199, in 1 h 45 min against 3 h 46. Its one-thread
+  phase ran 0.14 s a net against 0.30.
+- base-bands4-long (the same route, capped at 40 iterations instead of 5)
+  began at 12:35 to see whether the default prices converge. Its first
+  five iterations must repeat base-bands4's, a determinism check in
+  passing.
+
+**The placement metric, corrected.** altw-block1 (the block pull's lucky
+draw) left 44,745 after one iteration, 59% more than the frozen
+placement, although its peak middle-row crossings were 11% lower. A row
+total cannot see crossings gathered into a few columns. The RUDY map
+(93a2242: each net's crossing shared over its box's columns) ranks the
+four routed placements as the router did. Vertical sum above 100 per
+slice column and row: bands 75,333; frozen 265,629; block1 484,159;
+beta30 545,165. altw-block1 was stopped at 12:38.
+
+**The bands' fifth fault, and the fix under way.** The first 8-band
+placement failed: a 36-row chain in rows 87 to 130 had no legal start.
+The packer writes a chain's offsets as -(i + i/25), skipping the clock
+row after every 25 CARRY4s, so a chain of more than 25 starts on a
+25-row group boundary. The only one in that band is row 100, and from
+there the chain ends at 135. aa2e4b7 puts the band boundaries on those
+groups. The 4-band file routed above has boundaries at 87.5 and 262.5,
+not on groups; that it worked is partly the tall-chain rule and partly
+luck.
