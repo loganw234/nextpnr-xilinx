@@ -3,7 +3,7 @@
 #
 #   bash dense/bench.sh --name NAME [--binary BUILD_DIR] [--settings FILE]
 #                       [--max-iter N] [--heatmap] [--input netlist|placed]
-#                       [--bench DIR] [--expect-placement PLACE_DIR]
+#                       [--bench DIR] [--expect-placement PLACE_DIR] [--seed N]
 #
 # --heatmap adds --set router2/heatmap=heat: after each iteration the run
 # directory gets heat_iterN_by_{type,xy,net}.csv, where the overuse is (a
@@ -64,7 +64,7 @@
 set -euo pipefail
 
 IMAGE=${IMAGE:-cft-openxc7}
-NAME=""; BIN=""; SETTINGS=""; MAX_ITER=""; INPUT=netlist; HEATMAP=0; SUMMARIZE=""; EXPECT=""
+NAME=""; BIN=""; SETTINGS=""; MAX_ITER=""; INPUT=netlist; HEATMAP=0; SUMMARIZE=""; EXPECT=""; SEED=""
 BENCH=${BENCH:-$HOME/dense-bench}
 die () { echo "FATAL: $*" >&2; exit 1; }
 
@@ -131,6 +131,7 @@ while [ $# -gt 0 ]; do
     --heatmap)  HEATMAP=1; shift ;;
     --bench)    BENCH=${2:-}; shift 2 ;;
     --expect-placement) EXPECT=${2:-}; shift 2 ;;
+    --seed)     SEED=${2:-}; shift 2 ;;
     *)          die "unknown option $1" ;;
   esac
 done
@@ -160,6 +161,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 [ "$INPUT" = placed ] || [ -s "$BENCH/place.log" ] || die "no $BENCH/place.log to check this run's placement against"
 [ -z "$EXPECT" ] || [ -s "$EXPECT/place.log" ] || die "--expect-placement: no $EXPECT/place.log (a dense/place.sh directory)"
 [ -z "$EXPECT" ] || EXPECT=$(readlink -f "$EXPECT")
+[ -z "$SEED" ] || [[ "$SEED" =~ ^[0-9]+$ ]] || die "--seed takes a whole number"
 [ -s "$BENCH/placed.xdc" ] || die "no $BENCH/placed.xdc beside the placement"
 [ -z "${NEXTPNR_SKIP_FAILED_ARCS:-}" ] || die "NEXTPNR_SKIP_FAILED_ARCS accepts a partial route; unset it"
 BIN=$(readlink -f "${BIN:-$ROOT/build-dense}")
@@ -213,7 +215,7 @@ mkdir -p "$RUN"
 cp "$SETCOPY" "$RUN/settings.txt"
 
 VERSION=$(docker run --rm -v "$BIN":/bindense:ro "$IMAGE" /bindense/nextpnr-xilinx --version 2>&1 | head -1)
-CMD="nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin --xdc /bench/placed.xdc --json /bench/$DESIGN$FLOW --freq 100 --timing-allow-fail$SETARGS"
+CMD="nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin --xdc /bench/placed.xdc --json /bench/$DESIGN$FLOW --freq 100 --timing-allow-fail${SEED:+ --seed $SEED}$SETARGS"
 {
   echo "dense bench run $NAME, $(date -Is), host $(hostname)"
   echo "bench      dense/bench.sh at $(git -C "$ROOT" describe --tags --always --dirty 2> /dev/null || echo 'no git checkout')"

@@ -4,7 +4,10 @@
 # so a placement is judged first by what the router will face.
 #
 #   bash dense/place.sh --name NAME [--binary BUILD_DIR] [--settings FILE]
-#                       [--bench DIR]
+#                       [--seed N] [--bench DIR]
+#
+# --seed N is nextpnr's own: another seed is another placement, which is how
+# a placer change is shown to hold beyond the one placement it was tried on.
 #
 # THE SETTINGS are bench.sh's KEY=VALUE lines: a NEXTPNR_ name sets the run's
 # environment, anything else is --set. A router2/ key is refused - nothing is
@@ -28,7 +31,7 @@
 set -euo pipefail
 
 IMAGE=${IMAGE:-cft-openxc7}
-NAME=""; BIN=""; SETTINGS=""
+NAME=""; BIN=""; SETTINGS=""; SEED=""
 BENCH=${BENCH:-$HOME/dense-bench}
 die () { echo "FATAL: $*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
@@ -37,6 +40,7 @@ while [ $# -gt 0 ]; do
     --binary)   BIN=${2:-}; shift 2 ;;
     --settings) SETTINGS=${2:-}; shift 2 ;;
     --bench)    BENCH=${2:-}; shift 2 ;;
+    --seed)     SEED=${2:-}; shift 2 ;;
     *)          die "unknown option $1" ;;
   esac
 done
@@ -49,6 +53,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BIN=$(readlink -f "${BIN:-$ROOT/build-dense}")
 [ -x "$BIN/nextpnr-xilinx" ] || die "no $BIN/nextpnr-xilinx - run dense/build.sh"
 [ -z "$SETTINGS" ] || [ -f "$SETTINGS" ] || die "no settings file $SETTINGS"
+[ -z "$SEED" ] || [[ "$SEED" =~ ^[0-9]+$ ]] || die "--seed takes a whole number"
 
 SETCOPY=$(mktemp)
 trap 'rm -f "$SETCOPY"' EXIT
@@ -81,7 +86,7 @@ OUT="$BENCH/placements/$(date +%Y%m%d-%H%M)-$NAME"
 mkdir -p "$OUT"
 cp "$SETCOPY" "$OUT/settings.txt"
 VERSION=$(docker run --rm -v "$BIN":/bindense:ro "$IMAGE" /bindense/nextpnr-xilinx --version 2>&1 | head -1)
-CMD="nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin --xdc /bench/placed.xdc --json /bench/netlist.json --freq 100 --timing-allow-fail --no-route --write /out/placed.json$SETARGS"
+CMD="nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin --xdc /bench/placed.xdc --json /bench/netlist.json --freq 100 --timing-allow-fail --no-route --write /out/placed.json${SEED:+ --seed $SEED}$SETARGS"
 {
   echo "dense placement $NAME, $(date -Is), host $(hostname)"
   echo "bench      dense/place.sh at $(git -C "$ROOT" describe --tags --always --dirty 2> /dev/null || echo 'no git checkout')"
@@ -123,6 +128,7 @@ fi
   echo "$NAME: rc $(cat "$OUT/rc")"
   echo "binary     $VERSION"
   echo "env        ${ENVLIST:-none}"
+  echo "seed       ${SEED:-the default}"
   echo "heap       $(grep -m1 'HeAP congestion knobs' "$OUT/place.log" | sed 's/.*knobs: //') | $(grep -m1 'HeAP convergence' "$OUT/place.log" | sed 's/.*convergence: //')"
   echo "kept       $(grep -m1 'HeAP kept' "$OUT/place.log" | sed 's/.*HeAP kept //')"
   echo "wirelen    $(grep -E 'at iteration #[0-9]+: temp' "$OUT/place.log" | tail -1 | sed -E 's/.*wirelen = ([0-9]+).*/\1/') after refinement"
