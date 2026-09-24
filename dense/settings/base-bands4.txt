@@ -1,0 +1,4 @@
+# The default router prices on the min-cut banded placement (as
+# altw-bands4); compare with the reference curve 340,836 / 98,546 /
+# 74,578 / 66,479 on the frozen placement.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt

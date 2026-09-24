@@ -1,0 +1,11 @@
+# Mainline's alt-weights prices on the min-cut banded placement
+# (NEXTPNR_DENSE_BANDS, f758d8a on; bands/20260924-b4-frozen-v2). Measured
+# as a placement first (p-bands4d, three seeds): peak middle-row crossings
+# 11,361 / 12,315 / 12,361 against the default placer's 13,879 / 15,038 /
+# 13,251; wirelength 7.6-7.9 million against 8.5-8.9. Route with
+# --expect-placement at p-bands4d-sd; compare with altweights (28,199).
+router2/initCurrCongWeight=5.0
+router2/histCongWeight=0.5
+router2/currCongWeightMult=0.0
+router2/estimateWeight=1.0
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
