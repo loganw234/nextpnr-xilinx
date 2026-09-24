@@ -78,6 +78,17 @@ summary says so; compare its curve with that in mind.
 | `router2/revisitCheaper=1` | a wire the search reaches again for less is re-parented and queued again, stale queue entries skipped; upstream keeps the first path to reach a wire | only when set |
 | `router2/bbGrowEvery=N`, `bbGrowBy=M` | a net that keeps failing grows its box by M tiles every N failures; upstream's 1 every 10 by default | only when changed |
 | `router2/partition=GXxGY,...`, `router2/threads=N` | grids, finest first: a net routes in the first grid one of whose cells holds its box, a grid's cells in parallel up to N threads (0: the hardware's count), then what fits no cell on one thread. Unset, upstream's quadrants-halves-one-thread code runs unchanged | only when set |
+| `NEXTPNR_PLACER_MAX_STALL`, `_MIN_ITER`, `_KEEP=best\|last` | how long HeAP's analytic loop runs (upstream: until 5 iterations bring no better legal wirelength) and which legal placement it keeps (upstream: the best). Environment variables, like the base's other HeAP knobs, because a setting added before packing moves the placement | only when set |
+| `NEXTPNR_PLACER_BLOCK_WEIGHT` (`_DEPTH`, `_MIN`) | each solved cell tied to its block's mean position by a two-pin net of that weight, every solve; a cell's block is the instance its nets' names name most often (the first DEPTH components, default 4; blocks of at least MIN cells, default 200). The blocks found are logged | only when above 0 |
+
+Placements are judged before they are routed: `dense/place.sh --name NAME
+--binary BUILD_DIR --settings FILE` places the bench netlist once and
+writes it out, and `dense/placement_metrics.py` reports what the router
+will face - the nets across each row and column boundary, LUTs per used
+slice by row band, and how many rows each lane's cells spread over. A
+placement takes minutes; a routing iteration, hours. `bench.sh
+--expect-placement PLACE_DIR` then routes a measured placement and shows
+the route's placement is that one.
 
 ## What bites
 
