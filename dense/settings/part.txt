@@ -1,0 +1,9 @@
+# The defaults' prices, with the chip partitioned into grids, finest first:
+# a net routes in the first grid one of whose cells holds its box, 8x8 down
+# to column strips (8x1, 4x1: tall nets), row strips (1x4) and halves, the
+# cells of a grid 16 threads at a time. The base's iterations spent 38% (the
+# first) and 47% (the second) on one thread, and tall nets on two
+# (dense/LEDGER.md, 2026-09-23). Routing order changes, so the curve will
+# not be the reference's; the question is time and quality together.
+router2/partition=8x8,4x4,8x1,4x1,1x4,2x2,2x1,1x2
+router2/threads=16

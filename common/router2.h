@@ -65,6 +65,12 @@ struct Router2Cfg
     // a net that keeps failing grows its box by bb_grow_by tiles every
     // bb_grow_every failures (upstream: 1 every 10)
     int bb_grow_every = 10, bb_grow_by = 1;
+    // [dense] router2/partition: grids "GXxGY,..." finest first; a net
+    // routes in the first grid one of whose cells holds its box, a grid's
+    // cells in parallel, up to `threads` at once (0: the hardware's count).
+    // Empty: upstream's quadrants, halves and one thread, its own code.
+    std::string partition;
+    int threads = 0;
 };
 
 void router2(Context *ctx, const Router2Cfg &cfg);

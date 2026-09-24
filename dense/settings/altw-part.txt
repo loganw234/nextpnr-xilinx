@@ -1,0 +1,10 @@
+# Mainline's alt-weights prices (the best curve yet: 28,199 overuse after
+# one iteration where the defaults leave 340,836) with the grid partition of
+# part.txt: alt-weights spent 77% of that iteration's 3 h 46 min on one
+# thread.
+router2/initCurrCongWeight=5.0
+router2/histCongWeight=0.5
+router2/currCongWeightMult=0.0
+router2/estimateWeight=1.0
+router2/partition=8x8,4x4,8x1,4x1,1x4,2x2,2x1,1x2
+router2/threads=16

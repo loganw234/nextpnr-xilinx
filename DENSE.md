@@ -74,6 +74,7 @@ adds the per-iteration congestion files.
 | `router2/currCongWeightGrowth=F` | the congestion price becomes price x F + currCongWeightMult after each iteration; 1.0 (the default) is upstream's addition, bit for bit | only when not 1.0 |
 | `router2/revisitCheaper=1` | a wire the search reaches again for less is re-parented and queued again, stale queue entries skipped; upstream keeps the first path to reach a wire | only when set |
 | `router2/bbGrowEvery=N`, `bbGrowBy=M` | a net that keeps failing grows its box by M tiles every N failures; upstream's 1 every 10 by default | only when changed |
+| `router2/partition=GXxGY,...`, `router2/threads=N` | grids, finest first: a net routes in the first grid one of whose cells holds its box, a grid's cells in parallel up to N threads (0: the hardware's count), then what fits no cell on one thread. Unset, upstream's quadrants-halves-one-thread code runs unchanged | only when set |
 
 ## What bites
 

@@ -29,6 +29,7 @@
 #include "router2.h"
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <deque>
 #include <fstream>
 #include <map>
@@ -1576,6 +1577,171 @@ struct Router2
         return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     }
 
+    // [dense] router2/partition. Each grid divides the chip at quantiles of
+    // the nets' centres - upstream's one split is their median - into
+    // gx x gy cells; cell i of a grid spans [xlo[i], xhi[i]] and so on.
+    struct Grid
+    {
+        int gx = 1, gy = 1;
+        std::vector<int> xlo, xhi, ylo, yhi;
+    };
+    std::vector<Grid> grids;
+
+    static std::vector<int> quantile_splits(const std::vector<int> &sorted_c, int g)
+    {
+        std::vector<int> s;
+        for (int k = 1; k < g; k++)
+            s.push_back(sorted_c.empty() ? 0 : sorted_c.at(std::min(sorted_c.size() - 1, (sorted_c.size() * k) / g)));
+        return s;
+    }
+
+    int n_threads() const
+    {
+        int t = cfg.threads > 0 ? cfg.threads : int(std::thread::hardware_concurrency());
+        return std::max(1, t);
+    }
+
+    void setup_grids()
+    {
+        grids.clear();
+        if (cfg.partition.empty())
+            return;
+        std::vector<int> cxs, cys;
+        for (auto &n : nets) {
+            if (n.cx != -1)
+                cxs.push_back(n.cx);
+            if (n.cy != -1)
+                cys.push_back(n.cy);
+        }
+        std::sort(cxs.begin(), cxs.end());
+        std::sort(cys.begin(), cys.end());
+        auto cells = [](const std::vector<int> &splits, std::vector<int> &lo, std::vector<int> &hi) {
+            int n = int(splits.size()) + 1;
+            for (int i = 0; i < n; i++) {
+                lo.push_back(i == 0 ? 0 : splits.at(i - 1) + 1);
+                hi.push_back(i == n - 1 ? std::numeric_limits<int>::max() : splits.at(i));
+            }
+        };
+        const std::string &spec = cfg.partition;
+        size_t pos = 0;
+        while (true) {
+            size_t comma = spec.find(',', pos);
+            std::string item = spec.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+            int gx = 0, gy = 0;
+            char tail = 0;
+            if (sscanf(item.c_str(), "%dx%d%c", &gx, &gy, &tail) != 2 || gx < 1 || gy < 1 || gx > 64 || gy > 64)
+                log_error("router2: partition '%s': '%s' is not GXxGY with each from 1 to 64\n", spec.c_str(),
+                          item.c_str());
+            Grid g;
+            g.gx = gx;
+            g.gy = gy;
+            cells(quantile_splits(cxs, gx), g.xlo, g.xhi);
+            cells(quantile_splits(cys, gy), g.ylo, g.yhi);
+            grids.push_back(g);
+            if (comma == std::string::npos)
+                break;
+            pos = comma + 1;
+        }
+        std::string desc;
+        for (auto &g : grids)
+            desc += stringf("%s%dx%d", desc.empty() ? "" : ",", g.gx, g.gy);
+        log_info("router2 partition: %s, then one thread; up to %d threads at once\n", desc.c_str(), n_threads());
+    }
+
+    // [dense] do_route() under router2/partition: each net goes to the first
+    // grid one of whose cells holds its box; the grids in order, a grid's
+    // non-empty cells in parallel up to n_threads() at once; then the nets no
+    // cell holds, then the nets whose arcs left their cell's box, on one
+    // thread. A grid's cells are disjoint regions and thread_test_wire keeps
+    // each search inside its own, so how the cells are batched onto threads
+    // cannot change the result.
+    void do_route_grids()
+    {
+        if (route_queue.size() < 200) {
+            ThreadContext st;
+            st.rng.rngseed(ctx->rng64());
+            st.bb = ArcBounds(0, 0, std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
+            auto t_st = std::chrono::steady_clock::now();
+            for (size_t j = 0; j < route_queue.size(); j++)
+                route_net(st, nets_by_udata[route_queue[j]], false);
+            log_info("    phases: %d nets on one thread (under 200 queued) in %.0fs\n", int(route_queue.size()),
+                     secs_since(t_st));
+            return;
+        }
+        std::vector<std::vector<std::vector<NetInfo *>>> bins(grids.size());
+        for (size_t g = 0; g < grids.size(); g++)
+            bins[g].resize(grids[g].gx * grids[g].gy);
+        std::vector<NetInfo *> serial;
+        for (auto n : route_queue) {
+            auto &nd = nets.at(n);
+            NetInfo *ni = nets_by_udata.at(n);
+            bool placed = false;
+            for (size_t g = 0; g < grids.size() && !placed; g++) {
+                auto &gr = grids[g];
+                int ci = -1, cj = -1;
+                for (int i = 0; i < gr.gx && ci < 0; i++)
+                    if (nd.bb.x0 >= gr.xlo[i] && nd.bb.x1 <= gr.xhi[i])
+                        ci = i;
+                for (int j = 0; j < gr.gy && cj < 0; j++)
+                    if (nd.bb.y0 >= gr.ylo[j] && nd.bb.y1 <= gr.yhi[j])
+                        cj = j;
+                if (ci < 0 || cj < 0)
+                    continue;
+                bins[g][cj * gr.gx + ci].push_back(ni);
+                placed = true;
+            }
+            if (!placed)
+                serial.push_back(ni);
+        }
+        const int T = n_threads();
+        std::string phases;
+        std::vector<NetInfo *> failed;
+        for (size_t g = 0; g < grids.size(); g++) {
+            auto &gr = grids[g];
+            std::vector<ThreadContext> tcs(bins[g].size());
+            std::vector<int> used;
+            int nnets = 0;
+            for (size_t c = 0; c < bins[g].size(); c++) {
+                if (bins[g][c].empty())
+                    continue;
+                auto &t = tcs[c];
+                t.rng.rngseed(ctx->rng64());
+                int i = int(c) % gr.gx, j = int(c) / gr.gx;
+                t.bb = ArcBounds(gr.xlo[i], gr.ylo[j], gr.xhi[i], gr.yhi[j]);
+                t.route_nets = bins[g][c];
+                used.push_back(int(c));
+                nnets += int(bins[g][c].size());
+            }
+            auto t0 = std::chrono::steady_clock::now();
+            for (size_t w = 0; w < used.size(); w += size_t(T)) {
+                std::vector<std::thread> ths;
+                for (size_t k = w; k < std::min(used.size(), w + size_t(T)); k++) {
+                    int c = used[k];
+                    ths.emplace_back([this, &tcs, c]() { router_thread(tcs.at(c)); });
+                }
+                for (auto &th : ths)
+                    th.join();
+            }
+            for (int c : used)
+                for (auto f : tcs.at(c).failed_nets)
+                    failed.push_back(f);
+            phases += stringf("%s%dx%d %d cells %d nets %.0fs", phases.empty() ? "" : ", ", gr.gx, gr.gy,
+                              int(used.size()), nnets, secs_since(t0));
+        }
+        ThreadContext st;
+        st.rng.rngseed(ctx->rng64());
+        st.bb = ArcBounds(0, 0, std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
+        auto t1 = std::chrono::steady_clock::now();
+        for (auto ni : serial)
+            route_net(st, ni, false);
+        double s_serial = secs_since(t1);
+        auto t2 = std::chrono::steady_clock::now();
+        for (auto ni : failed)
+            route_net(st, ni, false);
+        log_info("    phases: %s, one thread %d nets %.0fs, then %d nets whose arcs left their cell's box %.0fs\n",
+                 phases.c_str(), int(serial.size()), s_serial, int(failed.size()), secs_since(t2));
+    }
+
     //#define ROUTER2_STATISTICS
 
     void dump_statistics()
@@ -1617,6 +1783,7 @@ struct Router2
         adopt_existing_routing();
         find_all_reserved_wires();
         partition_nets();
+        setup_grids();
         curr_cong_weight = cfg.init_curr_cong_weight;
         hist_cong_weight = cfg.hist_cong_weight;
         ThreadContext st;
@@ -1695,7 +1862,10 @@ struct Router2
                     log("    routed %d/%d\n", int(j), int(route_queue.size()));
             }
 #endif
-            do_route();
+            if (grids.empty())
+                do_route();
+            else
+                do_route_grids();
             route_queue.clear();
             update_congestion();
             if (!cfg.heatmap.empty())
@@ -1806,7 +1976,8 @@ Router2Cfg::Router2Cfg(Context *ctx)
             "router2/initCurrCongWeight", "router2/histCongWeight", "router2/currCongWeightMult",
             "router2/estimateWeight",     "router2/perfProfile",    "router2/heatmap",
             "router2/timingDriven",       "router2/currCongWeightGrowth", "router2/revisitCheaper",
-            "router2/bbGrowEvery",        "router2/bbGrowBy"};
+            "router2/bbGrowEvery",        "router2/bbGrowBy",       "router2/partition",
+            "router2/threads"};
     std::vector<std::string> explicit_keys;
     for (auto &s : ctx->settings) {
         std::string key = s.first.c_str(ctx);
@@ -1839,6 +2010,12 @@ Router2Cfg::Router2Cfg(Context *ctx)
     auto hm = ctx->settings.find(ctx->id("router2/heatmap"));
     if (hm != ctx->settings.end())
         heatmap = hm->second.is_string ? hm->second.as_string() : std::to_string(hm->second.as_int64());
+    auto pt = ctx->settings.find(ctx->id("router2/partition"));
+    if (pt != ctx->settings.end())
+        partition = pt->second.is_string ? pt->second.as_string() : std::to_string(pt->second.as_int64());
+    threads = ctx->setting<int>("router2/threads", 0);
+    if (threads < 0)
+        log_error("router2: threads must be at least 0 (0: the hardware's count), got %d\n", threads);
     curr_cong_growth = ctx->setting<float>("router2/currCongWeightGrowth", 1.0f);
     revisit_cheaper = ctx->setting<int>("router2/revisitCheaper", 0) != 0;
     bb_grow_every = ctx->setting<int>("router2/bbGrowEvery", 10);
@@ -1858,11 +2035,12 @@ Router2Cfg::Router2Cfg(Context *ctx)
     log_info("router2 settings: bwdMaxIter=%d glbBwdMaxIter=%d bbMargin=%d,%d ipinCostAdder=%g "
              "biasCostFactor=%g initCurrCongWeight=%g histCongWeight=%g currCongWeightMult=%g "
              "estimateWeight=%g perfProfile=%d heatmap=%s currCongWeightGrowth=%g revisitCheaper=%d "
-             "bbGrowEvery=%d bbGrowBy=%d; set explicitly: %s\n",
+             "bbGrowEvery=%d bbGrowBy=%d partition=%s threads=%d; set explicitly: %s\n",
              backwards_max_iter, global_backwards_max_iter, bb_margin_x, bb_margin_y, ipin_cost_adder,
              bias_cost_factor, init_curr_cong_weight, hist_cong_weight, curr_cong_mult, estimate_weight,
              int(perf_profile), heatmap.empty() ? "off" : heatmap.c_str(), curr_cong_growth, int(revisit_cheaper),
-             bb_grow_every, bb_grow_by, set_by_user.empty() ? "none" : set_by_user.c_str());
+             bb_grow_every, bb_grow_by, partition.empty() ? "upstream" : partition.c_str(), threads,
+             set_by_user.empty() ? "none" : set_by_user.c_str());
 }
 
 NEXTPNR_NAMESPACE_END
