@@ -513,3 +513,48 @@ processes were marked by hand at 04:17.
 at 04:10. altw-part answers its question better, and its slot goes to
 routing the best placement. `altw-grow15`'s launcher had waited on
 `part`'s; it was restarted without that dependency.
+
+## 2026-09-24 - a correction: the block pull's 11% was one draw; the placer varies by seed as much as by any knob so far
+
+The entry above reported p-block1 as cutting the nets across the middle
+rows by 11%. That was one placement at nextpnr's default seed. With
+`--seed` (7b78a60) the same settings drew differently:
+
+| placement | seed | wirelength | nets across row 175 | row bands' peak | lane spread fp256 / fp128 / fp64 / fp32 |
+|---|---|---|---|---|---|
+| default placer | default | 8,568,341 | 14,120 | 13,879 | 253 / 236 / 210 / 208 |
+| default placer | 2 | 8,514,453 | 12,088 | 15,038 | 261 / 216 / 215 / 180 |
+| block pull 1 | default | 8,739,322 | 12,496 | 12,380 | 133 / 118 / 77 / 73 |
+| block pull 1 | 2 | 10,713,715 | 16,980 | 16,936 | 201 / 104 / 154 / 101 |
+| block pull 1 | 3 | 9,449,276 | 15,248 | 15,444 | 204 / 130 / 109 / 59 |
+
+- The pull gathers the lanes at every seed; fp32's lanes span 59 to 101
+  rows against 180 to 208.
+- It does not lower the vertical demand. Two draws of three raised the
+  peak band above both of the default placer's, with 10 to 25% more
+  wirelength.
+- The default placer's own peak moves 8% between two seeds.
+
+So a single placement proves nothing here, and from now on each
+configuration is judged on three draws.
+
+**Why the pull draws badly.** At seed 2 it began from a legal wirelength
+of 26.1 million (seed 1: 20.7; no pull: 14.4), because at the first
+solves each block's mean is the mean of a random placement. f38f2f7 lets
+the pull start later and ramp in (`NEXTPNR_PLACER_BLOCK_FROM` /
+`_RAMP`); p-late-s1..s3 test that.
+
+**What crosses once the lanes are gathered.** The fp256 lane's own nets
+(2,125 to 2,211 at row 175) and cells no named net reaches (60,480 of
+them, spread over rows 38 to 324 whatever the pull). fp256's cells still
+span some 200 rows: its 60-row carry chains and 19,000 cells make it
+tall.
+
+**Another knob, more direct.** The vertical weight of HeAP's wirelength
+and of the refining annealer's cost is fixed at 2 in the base.
+dd2bc97 makes it `NEXTPNR_PLACER_HPWL_SCALE_Y`. p-ys4 and p-ys8 test 4
+and 8, each at three seeds.
+
+`altw-block1` routes the lucky draw. What it shows is still worth
+having, since it tests whether a lower peak routes better. But it is not
+a placement anyone can have by asking for the pull.
