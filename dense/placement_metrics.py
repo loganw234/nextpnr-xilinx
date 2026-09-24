@@ -141,6 +141,46 @@ print("   " + " ".join(f"{v:6.0f}" for v in row_bands))
 print("  nets across each column boundary, mean per 12-column band from column 0:")
 print("   " + " ".join(f"{v:6.0f}" for v in col_bands))
 
+# --- rudy: where the vertical and horizontal demand lands -------------------
+# A row total is not enough: on 2026-09-24 the block-pull placement had 11%
+# fewer nets across its peak row than the frozen placement and routed 59%
+# worse, its crossings spread over more rows and gathered in the lanes' own
+# columns. So each net's demand is spread over its box (RUDY): a net crossing
+# row boundary y adds 1/width to each slice column of its box there - its one
+# vertical track, shared out - and likewise for column boundaries. The map is
+# per slice column and slice row; the percentiles and the sums above a level
+# say how much of it stands where the wiring runs out.
+import numpy as np
+NX, NY = 154, 350
+dv = np.zeros((NY + 2, NX + 2))
+dh = np.zeros((NY + 2, NX + 2))
+for b, (y0, y1) in net_y.items():
+    xr = net_x.get(b)
+    if xr is None:
+        continue
+    x0, x1 = xr
+    ya, yb = int(y0), min(int(y1), NY - 1)
+    if yb > ya:
+        v = 1.0 / (x1 - x0 + 1)
+        dv[ya, x0] += v; dv[ya, x1 + 1] -= v; dv[yb, x0] -= v; dv[yb, x1 + 1] += v
+    if x1 > x0:
+        h = 1.0 / (yb - ya + 1)
+        dh[ya, x0] += h; dh[ya, x1] -= h; dh[yb + 1, x0] -= h; dh[yb + 1, x1] += h
+V = dv.cumsum(0).cumsum(1)[:NY, :NX]
+H = dh.cumsum(0).cumsum(1)[:NY, :NX]
+
+
+def over(m, level):
+    return float(np.maximum(m - level, 0).sum())
+
+
+pv = np.percentile(V, [50, 90, 99, 99.9])
+ph = np.percentile(H, [50, 90, 99, 99.9])
+print(f"rudy       vertical per slice column and row: median {pv[0]:.0f}, 90% {pv[1]:.0f}, 99% {pv[2]:.0f}, "
+      f"99.9% {pv[3]:.0f}, max {V.max():.0f}; above 60/80/100: {over(V, 60):.0f} / {over(V, 80):.0f} / "
+      f"{over(V, 100):.0f}; horizontal 99% {ph[2]:.0f}, max {H.max():.0f}, above 20/30: "
+      f"{over(H, 20):.0f} / {over(H, 30):.0f}")
+
 # --- density ---------------------------------------------------------------
 dens = []
 for b in range(0, 350, BAND):
