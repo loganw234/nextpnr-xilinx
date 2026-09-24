@@ -312,3 +312,96 @@ named the line. Two things were wrong around it:
 
 From here on, a launch is recorded only after the run's own log has
 started.
+
+## 2026-09-24 - where the overuse is: small nets in the placement's densest rows; grow15 stopped; the placer's own spreading tried
+
+Overuse after each iteration, on the validated placement, as of 03:10
+(the table of "the first variants", continued; percentages against the
+reference unless said otherwise):
+
+| run | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| reference | 340,836 | 98,546 | 74,578 | 66,479 |
+| grow15 | 340,836 | 91,488 (-7.2%) | 69,817 (-6.4%) | 65,622 (-1.3%), then stopped |
+| altweights | 28,199 | 28,761 (+2.0% on its own first) | running | |
+| altw-est175 | 40,476 (+44% on altweights') | running | | |
+
+**altw-est175** - alt-weights' prices with the base's 1.75 estimate
+weight - took 96 minutes for its first iteration against altweights' 226,
+its one-thread phase 4,240 s against 10,484. The greedier search is 2.4
+times faster and leaves 44% more overuse.
+
+**altweights' second iteration is flat**, and slower per net where it is
+serial:
+
+    quadrants 9,280 nets 724 s | halves 1,847 nets 589 s, 7,359 nets 3,388 s |
+    one thread 2,518 nets 8,409 s
+
+- 3.3 s a net on one thread, eleven times the first iteration's 0.30 s.
+With the congestion price held at 5.0 (its addition is 0.0), only the
+history price moves between iterations; `altw-grow15` (71b2eb5), queued
+behind cft-fp256's U50 sweep, raises the price by 1.5 times each
+iteration to see whether that breaks the plateau.
+
+**Where the overuse is.** From altweights' heat files and the frozen
+placement's cells (`placed.json`'s BEL attributes):
+
+- *by net:* 21,004 nets carry overuse after iteration 1 and 22,455 after
+  iteration 2. Nets of 1 to 16 users carry 96.5% and 97.2% of the per-net
+  total, nets of more than 40 users 2.1% and 1.6%. `u_krnl.arr_rdy`, the
+  31,968-user outlier of the first congestion map above, carries 5 units
+  of 57,534 after iteration 2. High fanout is not what is overused.
+- *by place:* grid rows 150 to 224 hold 64% of iteration 1's overuse and
+  73% of iteration 2's. Along the rows it spreads over columns 36 to 215.
+  The six hottest columns - 165, 166, 170, 171, 175, 176 - hold 18.5% of
+  iteration 1's. **A correction:** the first congestion map's "concentrated
+  right of centre, x 165 to 175", and "the first variants"' "in the same
+  columns as the defaults', x 165 to 176", name the hottest columns, not
+  where most of the overuse is. Most of it lies along the middle rows.
+- *the placement:* 44,377 of the chip's 50,950 slices are used, and the
+  160,261 LUTs fill 39% of the LUT sites (eight a slice, 6- and 5-input).
+  Every 25-row band of slice rows is roughly 75 to 92% used. LUTs per used
+  slice rise from 2.73 in rows 0-24 to between 3.85 and 4.11 in rows
+  125-274, then fall to 3.41 in the top band. The densest rows are the
+  rows with the overuse.
+
+So the demand is highest where the placement is densest, and it is spread
+over some twenty thousand small nets in those rows. A price moves a net
+only onto a free detour. That the best prices tried so far level off near
+28,000 fits too few free detours in those rows, but it does not prove it.
+
+**Decision.** grow15 was stopped at 03:09, in its fifth iteration (its
+`STOPPED`): the growth factor's gain shrank each iteration, from 7.2% to
+6.4% to 1.3%. Its slot went to a placement question.
+
+**The placer's own spreading.** The base's HeAP spreads a region of the
+chip once its cells exceed beta times its sites. `xilinx/arch.cc` sets
+beta to 0.4 for the 7-series, over `placerHeap/beta`, and reads
+`NEXTPNR_PLACER_BETA` from the environment ("try 0.2-0.3 to de-congest",
+its comment says). This design fills 39% of its LUT sites, so at 0.3 no
+region meets the target, and the spreading reaches across the whole chip.
+
+- `bench.sh` (8d12587) now takes `NEXTPNR_` lines in a settings file as
+  the run's environment. It refuses a name that the caller's environment
+  sets as well, and it refuses the iteration cap, which is `--max-iter`.
+  Both refusals were checked (exit 1, no run directory).
+- PROVENANCE.txt now records every passed variable with its value; until
+  now it recorded names alone.
+- `altw-beta30` is altweights' prices with `NEXTPNR_PLACER_BETA=0.3`,
+  capped at three iterations. It was launched at 03:09 from 8d12587 on
+  the a28f0e4 binary. Its log reads `beta=0.300`, and its placement
+  differs from the frozen one by design.
+
+**A precision about "altweights".** It runs the four values of mainline's
+alt-weights profile in 0.9.6's cost function. Mainline's router also
+scales both congestion prices by the arc's criticality (a weight of
+max(0.05, 1 - crit^2)), prices shared "resources", and differs in other
+ways. Nothing here measures mainline's router. "The first variants"'
+heading - "mainline's alt-weights cuts the first iteration's overuse
+twelvefold" - should be read as mainline's alt-weights values doing so.
+
+**Times for the record.** The two refused partition launches of 00:52
+and 01:07 were relaunched as `altw-part` at 01:43, 51 minutes after the
+first; the entry above rounds that to an hour. `part` waits in a launcher
+for the sweep to finish, and `altw-part` has routed since 02:04 with the
+partition applied, its placement IDENTICAL.
