@@ -1,0 +1,7 @@
+# Mainline's alt-weights prices on the aligned 8-band placement (as
+# base-bandsA8); compare with altw-bands4 (9,926; 5,894).
+router2/initCurrCongWeight=5.0
+router2/histCongWeight=0.5
+router2/currCongWeightMult=0.0
+router2/estimateWeight=1.0
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-a8-frozen/bands.txt

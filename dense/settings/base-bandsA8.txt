@@ -1,0 +1,6 @@
+# The default router prices on the aligned 8-band placement (aa2e4b7;
+# bands/20260924-a8-frozen). Measured as a placement first (p-bandsA8, three
+# seeds): RUDY vertical above 100 at 103,292 / 114,503 / 132,851 against the
+# frozen placement's 265,629; wirelength 7.2-7.7 million. Route with
+# --expect-placement at p-bandsA8-sd; compare with base-bands4.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-a8-frozen/bands.txt
