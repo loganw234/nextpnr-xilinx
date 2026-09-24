@@ -1,0 +1,2 @@
+# The block pull at weight 2. For dense/place.sh.
+NEXTPNR_PLACER_BLOCK_WEIGHT=2

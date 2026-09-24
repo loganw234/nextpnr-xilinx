@@ -3,7 +3,7 @@
 #
 #   bash dense/bench.sh --name NAME [--binary BUILD_DIR] [--settings FILE]
 #                       [--max-iter N] [--heatmap] [--input netlist|placed]
-#                       [--bench DIR]
+#                       [--bench DIR] [--expect-placement PLACE_DIR]
 #
 # --heatmap adds --set router2/heatmap=heat: after each iteration the run
 # directory gets heat_iterN_by_{type,xy,net}.csv, where the overuse is (a
@@ -20,6 +20,9 @@
 #     with --no-route, with --no-pack --no-place. NOT FAITHFUL in 0.9.6: an
 #     arc the in-memory flow routes is unroutable after the reload
 #     (dense/LEDGER.md, 2026-09-23). Kept for the day that is fixed.
+# --expect-placement PLACE_DIR compares the trajectory with a dense/place.sh
+# placement's instead, for settings that move the placer: the route is then
+# shown to be of the placement that was measured.
 # Either way two runs differ only in the binary and the settings, which is
 # what makes their curves comparable. DIR (default ~/dense-bench) holds the
 # constraints (placed.xdc) and a PROVENANCE.txt saying from what netlist,
@@ -61,7 +64,7 @@
 set -euo pipefail
 
 IMAGE=${IMAGE:-cft-openxc7}
-NAME=""; BIN=""; SETTINGS=""; MAX_ITER=""; INPUT=netlist; HEATMAP=0; SUMMARIZE=""
+NAME=""; BIN=""; SETTINGS=""; MAX_ITER=""; INPUT=netlist; HEATMAP=0; SUMMARIZE=""; EXPECT=""
 BENCH=${BENCH:-$HOME/dense-bench}
 die () { echo "FATAL: $*" >&2; exit 1; }
 
@@ -86,11 +89,13 @@ summarize () {
   PLACEMENT="not checked (--input placed routes the frozen placement itself)"
   if [ "$INPUT" = netlist ]; then
     traj () { grep "wirelen" "$1" | sed -E 's/^[0-9]{4}-[0-9-]+T[0-9:]+ //; s/time = [0-9.]+s//g; s/ +$//'; }
-    diff <(traj "$BENCH/place.log") <(traj "$RUN/route.log") > "$RUN/placement.diff"
+    local REF=${EXPECT:-$BENCH}/place.log WHOSE="the frozen placement's"
+    [ -z "$EXPECT" ] || WHOSE="$(basename "$EXPECT")'s"
+    diff <(traj "$REF") <(traj "$RUN/route.log") > "$RUN/placement.diff"
     if [ ! -s "$RUN/placement.diff" ]; then
-      PLACEMENT="IDENTICAL to the frozen placement's trajectory ($(traj "$BENCH/place.log" | wc -l) wirelen lines)"
+      PLACEMENT="IDENTICAL to $WHOSE trajectory ($(traj "$REF" | wc -l) wirelen lines)"
     else
-      PLACEMENT="DIFFERS from the frozen placement at $(grep -m1 -E '^[0-9]' "$RUN/placement.diff") - see placement.diff"
+      PLACEMENT="DIFFERS from $WHOSE at $(grep -m1 -E '^[0-9]' "$RUN/placement.diff") - see placement.diff"
     fi
   fi
   if grep -q "Router2 time" "$RUN/route.log" && ! grep -q "failed to converge" "$RUN/route.log"; then
@@ -125,6 +130,7 @@ while [ $# -gt 0 ]; do
     --input)    INPUT=${2:-}; shift 2 ;;
     --heatmap)  HEATMAP=1; shift ;;
     --bench)    BENCH=${2:-}; shift 2 ;;
+    --expect-placement) EXPECT=${2:-}; shift 2 ;;
     *)          die "unknown option $1" ;;
   esac
 done
@@ -137,6 +143,7 @@ if [ -n "$SUMMARIZE" ]; then
   VERSION=$(sed -n 's/^binary     //p' "$RUN/PROVENANCE.txt" | head -1)
   INPUT=$(sed -n 's/^input      \([a-z]*\):.*/\1/p' "$RUN/PROVENANCE.txt" | head -1)
   INPUT=${INPUT:-placed}      # runs before the input line routed placed.json
+  EXPECT=$(sed -n 's/^expect     \(\/[^ ]*\)$/\1/p' "$RUN/PROVENANCE.txt" | head -1)
   summarize
   exit 0
 fi
@@ -151,6 +158,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 [ -z "$MAX_ITER" ] || [[ "$MAX_ITER" =~ ^[0-9]+$ ]] || die "--max-iter takes a number"
 [ -s "$BENCH/$DESIGN" ] || die "no $BENCH/$DESIGN; see DENSE.md"
 [ "$INPUT" = placed ] || [ -s "$BENCH/place.log" ] || die "no $BENCH/place.log to check this run's placement against"
+[ -z "$EXPECT" ] || [ -s "$EXPECT/place.log" ] || die "--expect-placement: no $EXPECT/place.log (a dense/place.sh directory)"
+[ -z "$EXPECT" ] || EXPECT=$(readlink -f "$EXPECT")
 [ -s "$BENCH/placed.xdc" ] || die "no $BENCH/placed.xdc beside the placement"
 [ -z "${NEXTPNR_SKIP_FAILED_ARCS:-}" ] || die "NEXTPNR_SKIP_FAILED_ARCS accepts a partial route; unset it"
 BIN=$(readlink -f "${BIN:-$ROOT/build-dense}")
@@ -219,6 +228,7 @@ CMD="nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin --xdc /bench
   echo "chipdb     $(docker run --rm "$IMAGE" sha256sum /opt/openxc7/chipdb/xc7k325tffg900.bin | cut -d' ' -f1)"
   echo "image      $IMAGE $(docker image inspect "$IMAGE" --format '{{.Id}}' | cut -c8-19)"
   echo "command    $CMD"
+  echo "expect     ${EXPECT:-the frozen placement, $BENCH/place.log}"
   echo "env        ${ENVARGS[*]:-none}"
   [ -f "$BENCH/PROVENANCE.txt" ] && sed 's/^/  placement: /' "$BENCH/PROVENANCE.txt"
 } > "$RUN/PROVENANCE.txt"

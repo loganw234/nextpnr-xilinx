@@ -1,0 +1,11 @@
+# Mainline's alt-weights prices on the block-pull placement: each cell tied
+# to its block's mean position by a net of weight 1 (efa4e31). Measured as
+# a placement first (dense/place.sh, p-block1): a lane's middle 80% over 73
+# to 133 rows where the frozen placement spreads it over 208 to 253; 12,496
+# nets across row 175 against 14,120; wirelength +2%. Route it with
+# --expect-placement at p-block1's directory, and compare with altweights.
+router2/initCurrCongWeight=5.0
+router2/histCongWeight=0.5
+router2/currCongWeightMult=0.0
+router2/estimateWeight=1.0
+NEXTPNR_PLACER_BLOCK_WEIGHT=1

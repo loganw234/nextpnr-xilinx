@@ -1,0 +1,5 @@
+# The block pull at weight 1 with blocks one level deeper (depth 5): the
+# fp256 lane's 13,000 placed cells fall into its own sub-instances. For
+# dense/place.sh.
+NEXTPNR_PLACER_BLOCK_WEIGHT=1
+NEXTPNR_PLACER_BLOCK_DEPTH=5
