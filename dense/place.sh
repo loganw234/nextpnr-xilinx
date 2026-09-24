@@ -98,7 +98,11 @@ CMD="nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin --xdc /bench
 } > "$OUT/PROVENANCE.txt"
 
 set +e
-docker run --rm --name "dense-place-$NAME-$$" -u "$(id -u):$(id -g)" ${ENVARGS[@]+"${ENVARGS[@]}"} \
+# A placement is minutes of work, and the machine runs routes of hours and
+# Vivado builds beside it: if memory runs out, the kernel is to take this
+# first (2026-09-24: five placements beside four routes and a U50 build left
+# 6 GB free).
+docker run --rm --oom-score-adj 1000 --name "dense-place-$NAME-$$" -u "$(id -u):$(id -g)" ${ENVARGS[@]+"${ENVARGS[@]}"} \
   -v "$BIN":/bindense:ro -v "$BENCH":/bench:ro -v "$OUT":/out -w /out "$IMAGE" bash -c "
     set -o pipefail
     export PATH=/bindense:\$PATH
