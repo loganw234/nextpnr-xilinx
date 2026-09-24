@@ -1,0 +1,7 @@
+# The aligned 8 bands with HeAP spread further (NEXTPNR_PLACER_BETA 0.3).
+# Alone, the spreading raised the vertical crossings (altw-beta30, +43%
+# overuse); inside bands the vertical travel is capped, and what remains
+# after the bands is local - doubles, singles, bent quads. For
+# dense/place.sh; run at several seeds.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-a8-frozen/bands.txt
+NEXTPNR_PLACER_BETA=0.3
