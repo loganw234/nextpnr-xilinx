@@ -783,3 +783,15 @@ As of 15:55:
   climbed (26,625 against 28,761 at iteration 2), so `altwg-bandsA8`
   (8 bands, alt-weights, price x1.5 an iteration, cap 30, c2567cb)
   began at 14:39.
+
+**Spreading inside the bands** (p-bA8b30: the aligned 8 bands with
+`NEXTPNR_PLACER_BETA=0.3`, three seeds). RUDY vertical above 100:
+113,386 / 73,712 / 125,452, a mean 11% below the 8 bands' own (103,292
+/ 114,503 / 132,851), with one seed worse. The local density did not
+fall: 4.47 to 4.91 LUTs per used slice at the densest band, on fewer
+slices (39,608 to 42,376). Inside a band, beta reshuffles the cells
+rather than spreading them. It is not the lever for the short-wire
+overuse that remains after the bands; a LUT-per-slice cap would be, if
+the default prices stall there. `altw-grow15` and `altw-bands4-long`
+were stopped at 16:00, their questions answered (the rising price
+helps; the plateau was measured), to make room.
