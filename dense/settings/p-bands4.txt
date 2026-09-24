@@ -1,0 +1,7 @@
+# The frozen placement's netlist in four horizontal bands by recursive
+# min-cut bisection (dense/bands.py at bd515f9, levels 2, balance 0.02, 8
+# passes, from ~/dense-bench/placed.json): 7,524 nets cut at the middle row
+# where the placement has 14,215; 7,457 and 3,772 at the quarter rows. Each
+# cell confined to its band's rows (NEXTPNR_DENSE_BANDS, bd515f9 on). For
+# dense/place.sh; run at several seeds.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen/bands.txt

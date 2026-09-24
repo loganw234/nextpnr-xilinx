@@ -180,7 +180,7 @@ SETARGS=""; FILEENV=()
 while read -r line; do
   line=${line%%#*}; line=$(echo "$line" | tr -d '[:space:]')
   [ -n "$line" ] || continue
-  [[ "$line" =~ ^[A-Za-z0-9_./-]+=[A-Za-z0-9_.,+-]+$ ]] || die "settings line is not KEY=VALUE: '$line'"
+  [[ "$line" =~ ^[A-Za-z0-9_./-]+=[A-Za-z0-9_.,+/-]+$ ]] || die "settings line is not KEY=VALUE: '$line'"
   # A router setting goes in after placement: a setting added before packing
   # changes the annealer's placement even when only the router reads it
   # (dense/LEDGER.md, 2026-09-23). A NEXTPNR_ name is the run's environment:

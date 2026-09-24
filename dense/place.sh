@@ -63,7 +63,7 @@ SETARGS=""; ENVARGS=()
 while read -r line; do
   line=${line%%#*}; line=$(echo "$line" | tr -d '[:space:]')
   [ -n "$line" ] || continue
-  [[ "$line" =~ ^[A-Za-z0-9_./-]+=[A-Za-z0-9_.,+-]+$ ]] || die "settings line is not KEY=VALUE: '$line'"
+  [[ "$line" =~ ^[A-Za-z0-9_./-]+=[A-Za-z0-9_.,+/-]+$ ]] || die "settings line is not KEY=VALUE: '$line'"
   case "$line" in
     router2/*) die "$line: nothing is routed here" ;;
     NEXTPNR_*) ENVARGS+=(-e "$line") ;;
