@@ -270,3 +270,45 @@ whether a greedier search keeps the quality and costs less.
 One placement, one seed. Everything here is deterministic, so the
 differences are real for this placement; whether they hold on another is
 not shown.
+
+## 2026-09-24 - the partition round: its runs were refused, and nothing checked that they had started
+
+`router2/partition` (a28f0e4) was built at 00:49 by a script that would
+launch nothing unless the build's control matched, and it did: blinky's
+FASM from the new build is identical to the image binary's apart from the
+version comment (BUILD-INFO.txt, `build-dense-a28f0e4`). The script then
+stopped `revisit` in its third iteration - -2.2% and -7.1% against the
+reference at iterations 1 and 2, the gain grow15 gets for nothing, at 2.7
+times the time (its run directory's `STOPPED`) - to free a slot for
+`altw-part`, and launched `altw-part` at 00:52 and `part` at 01:07.
+
+Neither ran. `dense/bench.sh` refused both settings files at their first
+line with a value in it:
+
+    FATAL: settings line is not KEY=VALUE: 'router2/partition=8x8,4x4,8x1,4x1,1x4,2x2,2x1,1x2'
+
+A value could hold letters, digits and `_ . + -`, and the partition's grid
+list is separated by commas. The refusal was right to stop the run and it
+named the line. Two things were wrong around it:
+
+- the refusal came after the run directory was made, so each launch left
+  a directory holding only `settings.txt` (`20260924-0052-altw-part`,
+  `20260924-0107-part`); each now holds a `REFUSED` file saying so, and
+  neither is a run;
+- the script that launched them wrote "launched" and went on without
+  looking at what it had launched. `revisit`'s slot stood empty for an
+  hour, until a look at the machine's processes at 01:39 found no
+  partition run among them.
+
+**Fixed in bench.sh:**
+
+- a value may hold commas;
+- the settings are read and checked from a copy before the run directory
+  exists, and that copy is what the run keeps, so a refused run leaves
+  nothing behind;
+- PROVENANCE.txt now names the bench script's own commit (`bench` line).
+  Until now it named only the binary's, and a run's settings are parsed
+  by the script.
+
+From here on, a launch is recorded only after the run's own log has
+started.

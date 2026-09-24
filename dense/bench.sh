@@ -152,16 +152,19 @@ BIN=$(readlink -f "${BIN:-$ROOT/build-dense}")
 [ -x "$BIN/nextpnr-xilinx" ] || die "no $BIN/nextpnr-xilinx - run dense/build.sh"
 [ -z "$SETTINGS" ] || [ -f "$SETTINGS" ] || die "no settings file $SETTINGS"
 
-RUN="$BENCH/runs/$(date +%Y%m%d-%H%M)-$NAME"
-[ ! -e "$RUN" ] || die "$RUN exists"
-mkdir -p "$RUN"
-if [ -n "$SETTINGS" ]; then cp "$SETTINGS" "$RUN/settings.txt"
-else echo "# no settings: every router2 setting at its default" > "$RUN/settings.txt"; fi
+# The settings are read from a copy, and the copy is what the run keeps: a
+# refused line stops the run before its directory exists (until 2026-09-24 a
+# refusal left a directory holding only settings.txt). A value may hold
+# commas, for lists such as router2/partition's grids.
+SETCOPY=$(mktemp)
+trap 'rm -f "$SETCOPY"' EXIT
+if [ -n "$SETTINGS" ]; then cp "$SETTINGS" "$SETCOPY"
+else echo "# no settings: every router2 setting at its default" > "$SETCOPY"; fi
 SETARGS=""
 while read -r line; do
   line=${line%%#*}; line=$(echo "$line" | tr -d '[:space:]')
   [ -n "$line" ] || continue
-  [[ "$line" =~ ^[A-Za-z0-9_./-]+=[A-Za-z0-9_.+-]+$ ]] || die "settings line is not KEY=VALUE: '$line'"
+  [[ "$line" =~ ^[A-Za-z0-9_./-]+=[A-Za-z0-9_.,+-]+$ ]] || die "settings line is not KEY=VALUE: '$line'"
   # A router setting goes in after placement: a setting added before packing
   # changes the annealer's placement even when only the router reads it
   # (dense/LEDGER.md, 2026-09-23). Anything else is --set, and the placement
@@ -170,8 +173,13 @@ while read -r line; do
     router2/*) SETARGS="$SETARGS --set-route $line" ;;
     *)         SETARGS="$SETARGS --set $line" ;;
   esac
-done < "$RUN/settings.txt"
+done < "$SETCOPY"
 [ "$HEATMAP" -eq 0 ] || SETARGS="$SETARGS --set-route router2/heatmap=heat"
+
+RUN="$BENCH/runs/$(date +%Y%m%d-%H%M)-$NAME"
+[ ! -e "$RUN" ] || die "$RUN exists"
+mkdir -p "$RUN"
+cp "$SETCOPY" "$RUN/settings.txt"
 
 VERSION=$(docker run --rm -v "$BIN":/bindense:ro "$IMAGE" /bindense/nextpnr-xilinx --version 2>&1 | head -1)
 ENVARGS=()
@@ -183,6 +191,7 @@ done < <(env | grep -E '^(NEXTPNR|NPNR)_' || true)
 CMD="nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin --xdc /bench/placed.xdc --json /bench/$DESIGN$FLOW --freq 100 --timing-allow-fail$SETARGS"
 {
   echo "dense bench run $NAME, $(date -Is), host $(hostname)"
+  echo "bench      dense/bench.sh at $(git -C "$ROOT" describe --tags --always --dirty 2> /dev/null || echo 'no git checkout')"
   echo "binary     $VERSION"
   echo "           $BIN/nextpnr-xilinx sha256 $(sha256sum "$BIN/nextpnr-xilinx" | cut -d' ' -f1)"
   case "$VERSION" in *-dirty*) echo "           A DIRTY BUILD: this run is not a result of any commit" ;; esac
