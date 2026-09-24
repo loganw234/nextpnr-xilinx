@@ -40,6 +40,7 @@
 #include <boost/thread.hpp>
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <deque>
 #include <fstream>
 #include <map>
@@ -149,6 +150,7 @@ class HeAPPlacer
         auto startt = std::chrono::high_resolution_clock::now();
 
         ctx->lock();
+        apply_bands();
         place_constraints();
         build_fast_bels();
         seed_placement();
@@ -559,6 +561,105 @@ class HeAPPlacer
             }
             constraint_region_bounds[r->name] = bb;
         }
+    }
+
+    // [dense] NEXTPNR_DENSE_BANDS=FILE: confine cells to horizontal bands of
+    // the chip, as dense/bands.py writes them - a header "bands K rows R",
+    // then "<band> <cell name>" a line, band 0 the bottom. Band k is the
+    // slice rows [k*R/K, (k+1)*R/K) and every grid row between them, the
+    // chip's full width; a region per band, each named cell constrained to
+    // its band's. Cells the design fixes (a BEL attribute) are left alone. A
+    // file naming cells the design does not have is refused: it was made
+    // from another netlist.
+    void apply_bands()
+    {
+        const char *path = getenv("NEXTPNR_DENSE_BANDS");
+        if (path == nullptr)
+            return;
+        std::ifstream in(path);
+        if (!in)
+            log_error("NEXTPNR_DENSE_BANDS: cannot read '%s'\n", path);
+        int K = 0, R = 0;
+        std::vector<std::pair<int, std::string>> assign;
+        std::string line;
+        int lineno = 0;
+        while (std::getline(in, line)) {
+            lineno++;
+            if (line.empty() || line[0] == '#')
+                continue;
+            if (K == 0) {
+                if (sscanf(line.c_str(), "bands %d rows %d", &K, &R) != 2 || K < 1 || K > 64 || R < K)
+                    log_error("NEXTPNR_DENSE_BANDS: line %d of '%s' is not 'bands K rows R'\n", lineno, path);
+                continue;
+            }
+            size_t sp = line.find(' ');
+            int band = -1;
+            if (sp == std::string::npos || sscanf(line.substr(0, sp).c_str(), "%d", &band) != 1 || band < 0 ||
+                band >= K)
+                log_error("NEXTPNR_DENSE_BANDS: line %d of '%s' is not '<band 0..%d> <cell>'\n", lineno, path, K - 1);
+            assign.emplace_back(band, line.substr(sp + 1));
+        }
+        if (K == 0)
+            log_error("NEXTPNR_DENSE_BANDS: '%s' has no 'bands K rows R' header\n", path);
+        // slice rows -> grid rows, from the slices' own names ("SLICE_X52Y16/A6LUT")
+        std::map<int, std::pair<int, int>> row_grid; // slice row -> [lowest, highest] grid row
+        int max_x = 0;
+        for (auto bel : ctx->getBels()) {
+            Loc l = ctx->getBelLocation(bel);
+            max_x = std::max(max_x, l.x);
+            const std::string &bn = ctx->getBelName(bel).str(ctx);
+            int sx = 0, sy = 0;
+            if (bn.compare(0, 7, "SLICE_X") != 0 || sscanf(bn.c_str(), "SLICE_X%dY%d", &sx, &sy) != 2)
+                continue;
+            auto it = row_grid.find(sy);
+            if (it == row_grid.end())
+                row_grid[sy] = {l.y, l.y};
+            else {
+                it->second.first = std::min(it->second.first, l.y);
+                it->second.second = std::max(it->second.second, l.y);
+            }
+        }
+        std::vector<IdString> region(K);
+        std::vector<int> gy0(K), gy1(K);
+        for (int k = 0; k < K; k++) {
+            int r0 = (k * R) / K, r1 = ((k + 1) * R) / K - 1;
+            auto a = row_grid.lower_bound(r0), b = row_grid.upper_bound(r1);
+            if (a == row_grid.end() || b == row_grid.begin())
+                log_error("NEXTPNR_DENSE_BANDS: band %d (slice rows %d-%d) holds no slice\n", k, r0, r1);
+            --b;
+            gy0[k] = a->second.first;
+            gy1[k] = b->second.second;
+            // the grid rows between two bands (clock rows) go to the band below
+            if (k > 0)
+                gy0[k] = std::max(gy0[k], gy1[k - 1] + 1);
+            region[k] = ctx->id(stringf("dense_band_%d", k));
+            ctx->createRectangularRegion(region[k], 0, gy0[k], max_x, gy1[k]);
+        }
+        std::vector<int> n(K, 0);
+        int unknown = 0, fixed_cells = 0;
+        for (auto &a : assign) {
+            auto c = ctx->cells.find(ctx->id(a.second));
+            if (c == ctx->cells.end()) {
+                unknown++;
+                continue;
+            }
+            if (c->second->attrs.count(ctx->id("BEL"))) {
+                fixed_cells++;
+                continue;
+            }
+            ctx->constrainCellToRegion(c->first, region[a.first]);
+            n[a.first]++;
+        }
+        if (unknown > int(assign.size()) / 1000)
+            log_error("NEXTPNR_DENSE_BANDS: %d of the %d cells '%s' names are not in this design - a file made from "
+                      "another netlist\n",
+                      unknown, int(assign.size()), path);
+        log_info("dense bands: %d bands of %d slice rows from '%s'; %d cells constrained, %d fixed by the design, %d "
+                 "not in it\n",
+                 K, R, path, int(assign.size()) - unknown - fixed_cells, fixed_cells, unknown);
+        for (int k = 0; k < K; k++)
+            log_info("    band %d: slice rows %d-%d, grid rows %d-%d, %d cells\n", k, (k * R) / K,
+                     ((k + 1) * R) / K - 1, gy0[k], gy1[k], n[k]);
     }
 
     // [dense] The block of each placed cell, for NEXTPNR_PLACER_BLOCK_WEIGHT
