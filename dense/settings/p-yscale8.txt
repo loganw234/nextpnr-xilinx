@@ -1,0 +1,2 @@
+# As p-yscale4, at 8. For dense/place.sh; run at several seeds.
+NEXTPNR_PLACER_HPWL_SCALE_Y=8

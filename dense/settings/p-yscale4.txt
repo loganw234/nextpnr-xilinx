@@ -1,0 +1,4 @@
+# The vertical weight of HeAP's wirelength and of the refining annealer's
+# cost at 4 (the base's 2): a row costs four columns. For dense/place.sh;
+# run at several seeds.
+NEXTPNR_PLACER_HPWL_SCALE_Y=4

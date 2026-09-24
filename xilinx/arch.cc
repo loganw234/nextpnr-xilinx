@@ -887,8 +887,22 @@ bool Arch::place()
             cfg.spread_scale_y = atoi(e);
         if (const char *e = getenv("NEXTPNR_PLACER_ALPHA"))
             cfg.alpha = float(atof(e));
-        log_info("HeAP congestion knobs: beta=%.3f spread_scale=%d,%d alpha=%.3f\n",
-                 cfg.beta, cfg.spread_scale_x, cfg.spread_scale_y, cfg.alpha);
+        // [dense] NEXTPNR_PLACER_HPWL_SCALE_Y: the vertical weight of HeAP's
+        // wirelength (which of its legal placements it keeps) and of the
+        // refining annealer's cost, which placer_heap.cc hands it. At 2, the
+        // base's value, a row costs two columns. On a tall chip whose
+        // vertical wiring runs out first (cft-fp256's tile on the 325T,
+        // dense/LEDGER.md 2026-09-24) a larger value trades vertical span
+        // for horizontal. Refused by name outside 1 to 64.
+        if (const char *e = getenv("NEXTPNR_PLACER_HPWL_SCALE_Y")) {
+            char *end = nullptr;
+            long v = strtol(e, &end, 10);
+            if (*e == '\0' || *end != '\0' || v < 1 || v > 64)
+                log_error("NEXTPNR_PLACER_HPWL_SCALE_Y='%s' is not a whole number from 1 to 64\n", e);
+            cfg.hpwl_scale_y = int(v);
+        }
+        log_info("HeAP congestion knobs: beta=%.3f spread_scale=%d,%d alpha=%.3f hpwl_scale=%d,%d\n",
+                 cfg.beta, cfg.spread_scale_x, cfg.spread_scale_y, cfg.alpha, cfg.hpwl_scale_x, cfg.hpwl_scale_y);
         cfg.netShareWeight = 0.2;
         cfg.solverTolerance = 0.6e-6;
         cfg.cellGroups.emplace_back();
