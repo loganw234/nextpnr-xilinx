@@ -659,7 +659,32 @@ class HeAPPlacer
             ctx->createRectangularRegion(region[k], 0, gy0[k], max_x, gy1[k]);
         }
         std::vector<int> n(K, 0), luts(K, 0);
-        int unknown = 0, fixed_cells = 0;
+        int unknown = 0, fixed_cells = 0, too_tall = 0;
+        // A chain taller than a band cannot lie in one: cft-fp256's widest
+        // adders are 90 CARRY4s, and bands of 87 rows left the legaliser no
+        // place for them (2026-09-24, ab98706). Such a chain - root and every
+        // member - is left to the placer, unconstrained, and counted.
+        const int band_rows = R / K;
+        std::map<CellInfo *, int> height; // chain root -> rows it spans
+        auto chain_height = [&](CellInfo *root) {
+            auto h = height.find(root);
+            if (h != height.end())
+                return h->second;
+            int lo = 0, hi = 0;
+            std::vector<CellInfo *> todo{root};
+            while (!todo.empty()) {
+                CellInfo *c = todo.back();
+                todo.pop_back();
+                for (auto child : c->constr_children) {
+                    if (child->constr_y != child->UNCONSTR) {
+                        lo = std::min(lo, child->constr_y);
+                        hi = std::max(hi, child->constr_y);
+                    }
+                    todo.push_back(child);
+                }
+            }
+            return height[root] = hi - lo + 1;
+        };
         for (auto &a : assign) {
             auto c = ctx->cells.find(ctx->id(a.second));
             if (c == ctx->cells.end()) {
@@ -668,6 +693,13 @@ class HeAPPlacer
             }
             if (c->second->attrs.count(ctx->id("BEL"))) {
                 fixed_cells++;
+                continue;
+            }
+            CellInfo *root = c->second.get();
+            while (root->constr_parent != nullptr)
+                root = root->constr_parent;
+            if (chain_height(root) > band_rows - 4) {
+                too_tall++;
                 continue;
             }
             ctx->constrainCellToRegion(c->first, region[a.first]);
@@ -693,9 +725,14 @@ class HeAPPlacer
             log_error("NEXTPNR_DENSE_BANDS: %d of the %d cells '%s' names are not in this design - a file made from "
                       "another netlist\n",
                       unknown, int(assign.size()), path);
+        int tall_chains = 0;
+        for (auto &h : height)
+            if (h.second > band_rows - 4)
+                tall_chains++;
         log_info("dense bands: %d bands of %d slice rows from '%s'; %d cells constrained, %d fixed by the design, %d "
-                 "not in it\n",
-                 K, R, path, int(assign.size()) - unknown - fixed_cells, fixed_cells, unknown);
+                 "not in it, %d left free in %d chains taller than %d rows\n",
+                 K, R, path, int(assign.size()) - unknown - fixed_cells - too_tall, fixed_cells, unknown, too_tall,
+                 tall_chains, band_rows - 4);
         for (int k = 0; k < K; k++)
             log_info("    band %d: slice rows %d-%d, grid rows %d-%d, %d cells, %d of them LUTs\n", k, (k * R) / K,
                      ((k + 1) * R) / K - 1, gy0[k], gy1[k], n[k], luts[k]);
