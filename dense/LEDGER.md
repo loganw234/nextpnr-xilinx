@@ -220,3 +220,53 @@ than dissolving it.
 iterations with the heatmap) were launched from 16:47 by a script that
 first checked both runs' summaries - placement IDENTICAL and the curve
 1:340836 2:98546 - and would have launched nothing otherwise.
+
+## 2026-09-24 - the first variants: mainline's alt-weights cuts the first iteration's overuse twelvefold, and the rest move it by single digits
+
+On the validated placement, 0.9.6-10-gb5271f45, `--input netlist`,
+`--heatmap`, each capped at five iterations, launched 16:47 to 17:09 on
+2026-09-23, sharing the machine with each other and with cft-fp256's U50
+sweep - so times are indicative, and each run's `load.log` says how
+indicative. Overuse after each iteration, as of 00:45:
+
+| run | settings | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| reference | none (the pinned binary; `base` reproduced 1 and 2 to the wire) | 340,836 | 98,546 | 74,578 | 66,479 |
+| grow15 | price x1.5 + 2 per iteration | 340,836 | 91,488 (-7.2%) | 69,817 (-6.4%) | running |
+| revisit | cheaper paths re-queued | 333,334 (-2.2%) | 91,540 (-7.1%) | running | |
+| notiming | router ignores timing | 342,868 (+0.6%) | 99,734 (+1.2%) | 75,195 (+0.8%) | 68,666 (+3.3%) |
+| **altweights** | **mainline's alt-weights** | **28,199 (-92%)** | running | | |
+
+grow15's first iteration equals the reference's because the growth factor
+first acts after it. revisit's second iteration took 3 h 9 min, about 2.7
+times the base's 69, for the same gain grow15 has for nothing. notiming was
+never below the reference: timing-driven routing is not what holds
+convergence back.
+
+**altweights.** Pricing a shared wire at 5 from the first pass, and
+keeping it there, leaves 28,199 overused after one iteration where the
+defaults leave 340,836 - and 2.4 times less than the defaults leave after
+four. The first iteration took 3 h 46 min against the base's 10, and the
+phase line says where:
+
+    quadrants 198,919 nets 285 s | halves 18,032 nets 139 s, 16,277 nets 2,616 s |
+    one thread 34,895 nets 10,484 s | 32 retried 39 s
+
+- 77% of it on one thread, at 0.30 s a net. Its remaining overuse is on
+vertical long wires (VLONG 11,027, VLONG12 4,490, VQUAD 6,681, BENTQUAD
+1,843, DOUBLE 1,050), in the same columns as the defaults', x 165 to 176.
+So the negotiation that works here is expensive exactly where the router
+is serial, and the column band is a property of the placement, whichever
+prices the router uses.
+
+**Decisions.** The reference was stopped at 20:20, in its fifth iteration
+after 3 h 24 min of it: cft-fp256's U50 sweep was waiting for the memory it
+held, and `base` having reproduced it to the wire, its later iterations can
+be regenerated whenever a comparison needs them. notiming was stopped at
+00:44 in its fifth, its question answered four times over. Its slot went to
+`altw-est175`: alt-weights' prices with the 1.75 estimate weight, to see
+whether a greedier search keeps the quality and costs less.
+
+One placement, one seed. Everything here is deterministic, so the
+differences are real for this placement; whether they hold on another is
+not shown.
