@@ -619,23 +619,46 @@ class HeAPPlacer
                 it->second.second = std::max(it->second.second, l.y);
             }
         }
+        // A band's grid rows: the lowest to the highest grid row of its slice
+        // rows. The grid need not count the way the slices do - on the
+        // 7-series it counts downward, slice row 0 at grid row 363, and a
+        // rectangle from a band's first slice row to its last was empty
+        // (2026-09-24, bd515f9).
         std::vector<IdString> region(K);
-        std::vector<int> gy0(K), gy1(K);
+        std::vector<int> gy0(K, std::numeric_limits<int>::max()), gy1(K, std::numeric_limits<int>::min());
         for (int k = 0; k < K; k++) {
             int r0 = (k * R) / K, r1 = ((k + 1) * R) / K - 1;
-            auto a = row_grid.lower_bound(r0), b = row_grid.upper_bound(r1);
-            if (a == row_grid.end() || b == row_grid.begin())
+            for (auto it = row_grid.lower_bound(r0); it != row_grid.end() && it->first <= r1; ++it) {
+                gy0[k] = std::min(gy0[k], it->second.first);
+                gy1[k] = std::max(gy1[k], it->second.second);
+            }
+            if (gy0[k] > gy1[k])
                 log_error("NEXTPNR_DENSE_BANDS: band %d (slice rows %d-%d) holds no slice\n", k, r0, r1);
-            --b;
-            gy0[k] = a->second.first;
-            gy1[k] = b->second.second;
-            // the grid rows between two bands (clock rows) go to the band below
-            if (k > 0)
-                gy0[k] = std::max(gy0[k], gy1[k - 1] + 1);
+        }
+        // the grid rows between two bands (clock rows) go to the band lower
+        // on the grid, so that the bands tile the rows they span
+        std::vector<int> by_grid(K);
+        std::iota(by_grid.begin(), by_grid.end(), 0);
+        std::sort(by_grid.begin(), by_grid.end(), [&](int a, int b) { return gy0[a] < gy0[b]; });
+        for (int i = 0; i + 1 < K; i++) {
+            int a = by_grid[i], b = by_grid[i + 1];
+            if (gy1[a] >= gy0[b]) {
+                // a slice row on two grid rows (in different columns) would
+                // do this; split the shared rows between the two, and say so
+                int cut = (gy1[a] + gy0[b]) / 2;
+                log_warning("NEXTPNR_DENSE_BANDS: bands %d and %d share grid rows %d-%d; split at %d\n", a, b, gy0[b],
+                            gy1[a], cut);
+                gy1[a] = cut;
+                gy0[b] = cut + 1;
+            } else {
+                gy1[a] = gy0[b] - 1;
+            }
+        }
+        for (int k = 0; k < K; k++) {
             region[k] = ctx->id(stringf("dense_band_%d", k));
             ctx->createRectangularRegion(region[k], 0, gy0[k], max_x, gy1[k]);
         }
-        std::vector<int> n(K, 0);
+        std::vector<int> n(K, 0), luts(K, 0);
         int unknown = 0, fixed_cells = 0;
         for (auto &a : assign) {
             auto c = ctx->cells.find(ctx->id(a.second));
@@ -649,6 +672,22 @@ class HeAPPlacer
             }
             ctx->constrainCellToRegion(c->first, region[a.first]);
             n[a.first]++;
+            if (c->second->type == ctx->id("SLICE_LUTX"))
+                luts[a.first]++;
+        }
+        // each band must have room for what it was given: its sites counted,
+        // not assumed (an empty band crashed the placer, bd515f9)
+        for (int k = 0; k < K; k++) {
+            const auto &bels = ctx->region.at(region[k])->bels;
+            int lut_bels = 0;
+            for (auto bel : bels)
+                if (ctx->getBelType(bel) == ctx->id("SLICE_LUTX"))
+                    lut_bels++;
+            // eight LUT bels a slice, of which four take a six-input LUT
+            if (bels.empty() || luts[k] > lut_bels / 2)
+                log_error("NEXTPNR_DENSE_BANDS: band %d (grid rows %d-%d) has %d bels, %d of them LUT bels, for %d "
+                          "LUTs\n",
+                          k, gy0[k], gy1[k], int(bels.size()), lut_bels, luts[k]);
         }
         if (unknown > int(assign.size()) / 1000)
             log_error("NEXTPNR_DENSE_BANDS: %d of the %d cells '%s' names are not in this design - a file made from "
@@ -658,8 +697,8 @@ class HeAPPlacer
                  "not in it\n",
                  K, R, path, int(assign.size()) - unknown - fixed_cells, fixed_cells, unknown);
         for (int k = 0; k < K; k++)
-            log_info("    band %d: slice rows %d-%d, grid rows %d-%d, %d cells\n", k, (k * R) / K,
-                     ((k + 1) * R) / K - 1, gy0[k], gy1[k], n[k]);
+            log_info("    band %d: slice rows %d-%d, grid rows %d-%d, %d cells, %d of them LUTs\n", k, (k * R) / K,
+                     ((k + 1) * R) / K - 1, gy0[k], gy1[k], n[k], luts[k]);
     }
 
     // [dense] The block of each placed cell, for NEXTPNR_PLACER_BLOCK_WEIGHT
