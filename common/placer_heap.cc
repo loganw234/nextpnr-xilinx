@@ -38,9 +38,11 @@
 #include <Eigen/IterativeLinearSolvers>
 #include <boost/optional.hpp>
 #include <boost/thread.hpp>
+#include <algorithm>
 #include <chrono>
 #include <deque>
 #include <fstream>
+#include <map>
 #include <numeric>
 #include <queue>
 #include <random>
@@ -151,6 +153,7 @@ class HeAPPlacer
         build_fast_bels();
         seed_placement();
         update_all_chains();
+        assign_blocks();
         wirelen_t hpwl = total_hpwl();
         log_info("Creating initial analytic placement for %d cells, random placement wirelen = %d.\n",
                  int(place_cells.size()), int(hpwl));
@@ -558,6 +561,111 @@ class HeAPPlacer
         }
     }
 
+    // [dense] The block of each placed cell, for NEXTPNR_PLACER_BLOCK_WEIGHT
+    // (placer_heap.h says how a block is read from the net names). Ids go
+    // to blocks in net-name order and a tie goes to the lower id, so the
+    // assignment is deterministic.
+    std::unordered_map<IdString, int> cell_block;
+    std::vector<std::string> block_names;
+    std::vector<int> block_size;
+
+    void assign_blocks()
+    {
+        if (cfg.block_weight <= 0)
+            return;
+        std::map<std::string, int> ids;
+        std::unordered_map<IdString, int> net_block;
+        for (auto net : sorted(ctx->nets)) {
+            NetInfo *ni = net.second;
+            if (int(ni->users.size()) + 1 > 2000)
+                continue;
+            const std::string &n = ni->name.str(ctx);
+            if (n.empty() || n[0] == '$')
+                continue;
+            int comps = 1;
+            size_t cut = std::string::npos;
+            for (size_t i = 0; i < n.size(); i++)
+                if (n[i] == '.' && ++comps == cfg.block_depth + 1)
+                    cut = i;
+            if (comps <= cfg.block_depth)
+                continue; // the signal itself lies within the depth: no instance to name
+            std::string b = n.substr(0, cut);
+            auto it = ids.find(b);
+            if (it == ids.end()) {
+                it = ids.emplace(b, int(block_names.size())).first;
+                block_names.push_back(b);
+            }
+            net_block[ni->name] = it->second;
+        }
+        block_size.assign(block_names.size(), 0);
+        for (auto cell : place_cells) {
+            std::map<int, int> votes;
+            for (auto &port : cell->ports) {
+                if (port.second.net == nullptr)
+                    continue;
+                auto f = net_block.find(port.second.net->name);
+                if (f != net_block.end())
+                    votes[f->second]++;
+            }
+            int best = -1, best_votes = 0;
+            for (auto &v : votes)
+                if (v.second > best_votes) {
+                    best = v.first;
+                    best_votes = v.second;
+                }
+            if (best >= 0) {
+                cell_block[cell->name] = best;
+                block_size[best]++;
+            }
+        }
+        std::vector<int> order;
+        int kept = 0, kept_cells = 0;
+        for (int i = 0; i < int(block_names.size()); i++)
+            if (block_size[i] >= cfg.block_min) {
+                order.push_back(i);
+                kept++;
+                kept_cells += block_size[i];
+            }
+        std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return block_size[a] > block_size[b]; });
+        log_info("HeAP blocks: weight %.3f; %d instances named at depth %d, %d of them with at least %d of the %d "
+                 "placed cells, holding %d\n",
+                 cfg.block_weight, int(block_names.size()), cfg.block_depth, kept, cfg.block_min,
+                 int(place_cells.size()), kept_cells);
+        for (int k = 0; k < int(order.size()) && k < 12; k++)
+            log_info("    %6d  %s\n", block_size[order[k]], block_names[order[k]].c_str());
+    }
+
+    // [dense] Tie each solved cell of a block to the block's mean position:
+    // a two-pin net to a point, stamped like the anchors below.
+    void stamp_block_pull(EquationSystem<double> &es, bool yaxis)
+    {
+        if (cfg.block_weight <= 0 || cell_block.empty())
+            return;
+        std::vector<int> row_block(solve_cells.size(), -1);
+        std::vector<double> sum(block_names.size(), 0);
+        std::vector<int> cnt(block_names.size(), 0);
+        for (size_t row = 0; row < solve_cells.size(); row++) {
+            auto f = cell_block.find(solve_cells.at(row)->name);
+            if (f == cell_block.end() || block_size.at(f->second) < cfg.block_min)
+                continue;
+            const auto &cl = cell_locs.at(solve_cells.at(row)->name);
+            row_block[row] = f->second;
+            sum[f->second] += yaxis ? cl.y : cl.x;
+            cnt[f->second]++;
+        }
+        for (size_t row = 0; row < solve_cells.size(); row++) {
+            int b = row_block[row];
+            if (b < 0 || cnt[b] < 2)
+                continue;
+            const auto &cl = cell_locs.at(solve_cells.at(row)->name);
+            double centre = sum[b] / cnt[b];
+            double dist = std::abs((yaxis ? cl.y : cl.x) - centre);
+            double weight = cfg.block_weight / std::max<double>(1, (yaxis ? cfg.hpwl_scale_y : cfg.hpwl_scale_x) * dist);
+            es.add_coeff(row, row, weight);
+            es.add_rhs(row, weight * centre);
+        }
+    }
+
     // Build and solve in one direction
     void build_solve_direction(bool yaxis, int iter)
     {
@@ -824,6 +932,7 @@ class HeAPPlacer
                 es.add_rhs(row, weight * l_pos);
             }
         }
+        stamp_block_pull(es, yaxis);
     }
 
     // Build the system of equations for either X or Y
@@ -2012,6 +2121,15 @@ PlacerHeapCfg::PlacerHeapCfg(Context *ctx)
     };
     max_stall = env_int("NEXTPNR_PLACER_MAX_STALL", 1, 5);
     min_iter = env_int("NEXTPNR_PLACER_MIN_ITER", 0, 0);
+    block_depth = env_int("NEXTPNR_PLACER_BLOCK_DEPTH", 1, 4);
+    block_min = env_int("NEXTPNR_PLACER_BLOCK_MIN", 1, 200);
+    if (const char *e = getenv("NEXTPNR_PLACER_BLOCK_WEIGHT")) {
+        char *end = nullptr;
+        double v = strtod(e, &end);
+        if (*e == '\0' || *end != '\0' || !(v >= 0 && v <= 1000))
+            log_error("NEXTPNR_PLACER_BLOCK_WEIGHT='%s' is not a number from 0 to 1000\n", e);
+        block_weight = float(v);
+    }
     if (const char *e = getenv("NEXTPNR_PLACER_KEEP")) {
         if (std::string(e) == "last")
             keep_last = true;

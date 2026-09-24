@@ -72,7 +72,9 @@ while IFS='=' read -r k v; do
   ENVARGS+=(-e "$k=$v")
 done < <(env | grep -E '^(NEXTPNR|NPNR)_' || true)
 # the -e flags and their values interleave; drop the flags to list the values
-ENVLIST=$(printf '%s\n' ${ENVARGS[@]+"${ENVARGS[@]}"} | grep -v '^-e$' | tr '\n' ' ')
+# (an empty list is "none": until 2026-09-24 it was printed as a blank)
+ENVLIST=""
+for a in ${ENVARGS[@]+"${ENVARGS[@]}"}; do [ "$a" = -e ] || ENVLIST="$ENVLIST${ENVLIST:+ }$a"; done
 
 OUT="$BENCH/placements/$(date +%Y%m%d-%H%M)-$NAME"
 [ ! -e "$OUT" ] || die "$OUT exists"

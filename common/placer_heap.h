@@ -58,6 +58,18 @@ struct PlacerHeapCfg
     int max_stall = 5, min_iter = 0;
     bool keep_last = false;
 
+    // [dense] Keep each block of the design together. A synthesised
+    // netlist is flat, but most nets keep their RTL paths: a net whose name
+    // has more than block_depth dot-separated components names the instance
+    // its first block_depth components spell, and a cell belongs to the
+    // instance its nets name most often (nets above 2000 users do not
+    // vote). Each solved cell of a block of at least block_min cells is
+    // then tied to the block's mean position by one more two-pin net of
+    // weight block_weight, in the solver's own linearisation. 0 (the
+    // default) is upstream. NEXTPNR_PLACER_BLOCK_WEIGHT / _DEPTH / _MIN.
+    float block_weight = 0;
+    int block_depth = 4, block_min = 200;
+
     // These cell types will be randomly locked to prevent singular matrices
     std::unordered_set<IdString> ioBufTypes;
     // These cell types are part of the same unit (e.g. slices split into
