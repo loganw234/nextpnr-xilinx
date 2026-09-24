@@ -1,0 +1,9 @@
+# Mainline's alt-weights prices (congestion 5.0 from the start, not growing;
+# history 0.5) with this base's estimate weight, 1.75, in place of the
+# profile's 1.0. altweights took 3 h 46 min for its first iteration (77% of
+# it on one thread) and left 28,199 overuse where the defaults leave 340,836:
+# this asks whether the greedier search keeps that and costs less.
+router2/initCurrCongWeight=5.0
+router2/histCongWeight=0.5
+router2/currCongWeightMult=0.0
+router2/estimateWeight=1.75
