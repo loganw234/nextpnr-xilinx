@@ -716,3 +716,46 @@ there the chain ends at 135. aa2e4b7 puts the band boundaries on those
 groups. The 4-band file routed above has boundaries at 87.5 and 262.5,
 not on groups; that it worked is partly the tall-chain rule and partly
 luck.
+
+## 2026-09-24 - alt-weights converges on the bands; the aligned bands, and eight of them the steadiest; the route is deterministic end to end
+
+**The curves on the banded placement** (p-bands4d-sd, unaligned 4 bands,
+f758d8a):
+
+| route | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| base-bands4 (default prices, cap 5) | 301,534 | 61,437 | 26,839 | 18,628 | 15,118 |
+| base-bands4-long (the same, cap 40) | 301,534 | 61,437 | running | | |
+| altw-bands4 (alt-weights, cap 5) | 9,926 | 5,894 | running | | |
+
+- Alt-weights' second iteration falls 41% on the bands. On the frozen
+  placement it rose (28,199 to 28,761 to 31,319). Held at 5.0, the price
+  was not the fault; the placement's demand was.
+- base-bands4-long repeats base-bands4's first two iterations to the
+  wire. The route, like the placement, is deterministic.
+- `altw-bands4-long` (the same route, cap 30) began at 13:54, to see
+  whether alt-weights reaches zero.
+
+**The bands on the 25-row groups** (aa2e4b7; bands/20260924-a4-frozen:
+rows 0-75, 75-175, 175-250, 250-350; bands/20260924-a8-frozen: eight
+bands of 25 to 50 rows), three seeds each. The metrics are RUDY's
+vertical sum above 100 and the peak row band:
+
+| placement | wirelength | RUDY vertical above 100 | peak row band |
+|---|---|---|---|
+| frozen (default placer) | 8,568,341 | 265,629 | 13,879 |
+| unaligned 4 bands, default seed (routed above) | 7,703,566 | 75,333 | 11,361 |
+| aligned 4 bands | 7,653,157 / 7,573,958 / 8,251,621 | 84,875 / 136,812 / 255,541 | 12,329 / 13,160 / 12,733 |
+| **aligned 8 bands** | **7,287,773 / 7,236,470 / 7,718,134** | **103,292 / 114,503 / 132,851** | **10,555 / 11,279 / 11,176** |
+
+- Every aligned placement legalised. The 8-band file leaves 5,859 cells
+  free in the 8 chains taller than their bands, the 4-band file 2,430
+  in 3.
+- Four bands vary with the seed: seed 3 is as bad as the frozen
+  placement by RUDY. Eight bands are the steadiest, the lowest in
+  wirelength and peak row band at every seed. The unaligned 4-band
+  placement that routed so well may be a good draw of a variable method.
+- `base-bandsA8` (default prices, cap 8) and `altw-bandsA8` (alt-weights,
+  cap 30) route the aligned 8-band default-seed placement, from 13:55
+  and 13:56 on the aa2e4b7 binary, each with `--expect-placement` at
+  p-bandsA8-sd.
