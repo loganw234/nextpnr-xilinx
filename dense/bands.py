@@ -27,6 +27,7 @@ named cell to its band's rows (placer_heap.cc).
 
 usage: bands.py PLACED_JSON BANDS_FILE [LEVELS] [BALANCE] [PASSES]
 """
+import json
 import re
 import sys
 import time
@@ -71,14 +72,17 @@ with open(path) as f:
         if parent is None:
             mp = parent_re.search(line)
             if mp:
-                parent = mp.group(1)
+                parent = json.loads('"' + mp.group(1) + '"')
         if '"connections": {' in line:
             in_conn = True; continue
         if in_conn:
             if line.strip().startswith('}'):
                 in_conn = False
                 if site is not None:
-                    names.append(cur)
+                    # the JSON's own escaping undone: a name holding a backslash
+                    # ("$flatten\u_krnl...") is written with two (until 2026-09-24
+                    # 715 such names reached the band file unmatched)
+                    names.append(json.loads('"' + cur + '"'))
                     ys.append(site[1] * yscale.get(site[0], 1.0))
                     kinds.append(site[0])
                     parents.append(parent)
