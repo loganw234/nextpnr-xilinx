@@ -44,6 +44,7 @@
 #include <deque>
 #include <fstream>
 #include <map>
+#include <set>
 #include <numeric>
 #include <queue>
 #include <random>
@@ -581,6 +582,10 @@ class HeAPPlacer
             log_error("NEXTPNR_DENSE_BANDS: cannot read '%s'\n", path);
         int K = 0, R = 0;
         std::vector<std::pair<int, std::string>> assign;
+        // each band's slice rows [r0, r1): from "band k r0 r1" lines when the
+        // file has them (dense/bands.py from 2026-09-24 writes them, its bands
+        // ending on the clock rows' 25-row groups), else K equal bands
+        std::map<int, std::pair<int, int>> band_rows;
         std::string line;
         int lineno = 0;
         while (std::getline(in, line)) {
@@ -592,6 +597,15 @@ class HeAPPlacer
                     log_error("NEXTPNR_DENSE_BANDS: line %d of '%s' is not 'bands K rows R'\n", lineno, path);
                 continue;
             }
+            int bk = -1, b0 = -1, b1 = -1;
+            if (line.compare(0, 5, "band ") == 0) {
+                if (sscanf(line.c_str(), "band %d %d %d", &bk, &b0, &b1) != 3 || bk < 0 || bk >= K || b0 < 0 ||
+                    b1 <= b0 || b1 > R)
+                    log_error("NEXTPNR_DENSE_BANDS: line %d of '%s' is not 'band <0..%d> <r0> <r1>'\n", lineno, path,
+                              K - 1);
+                band_rows[bk] = {b0, b1};
+                continue;
+            }
             size_t sp = line.find(' ');
             int band = -1;
             if (sp == std::string::npos || sscanf(line.substr(0, sp).c_str(), "%d", &band) != 1 || band < 0 ||
@@ -601,6 +615,21 @@ class HeAPPlacer
         }
         if (K == 0)
             log_error("NEXTPNR_DENSE_BANDS: '%s' has no 'bands K rows R' header\n", path);
+        if (!band_rows.empty()) {
+            int next = 0;
+            for (int k = 0; k < K; k++) {
+                auto it = band_rows.find(k);
+                if (it == band_rows.end() || it->second.first != next)
+                    log_error("NEXTPNR_DENSE_BANDS: '%s' gives band rows that do not tile 0..%d in order (band %d)\n",
+                              path, R, k);
+                next = it->second.second;
+            }
+            if (next != R)
+                log_error("NEXTPNR_DENSE_BANDS: '%s' gives band rows ending at %d, not %d\n", path, next, R);
+        } else {
+            for (int k = 0; k < K; k++)
+                band_rows[k] = {(k * R) / K, ((k + 1) * R) / K};
+        }
         // slice rows -> grid rows, from the slices' own names ("SLICE_X52Y16/A6LUT")
         std::map<int, std::pair<int, int>> row_grid; // slice row -> [lowest, highest] grid row
         int max_x = 0;
@@ -627,7 +656,7 @@ class HeAPPlacer
         std::vector<IdString> region(K);
         std::vector<int> gy0(K, std::numeric_limits<int>::max()), gy1(K, std::numeric_limits<int>::min());
         for (int k = 0; k < K; k++) {
-            int r0 = (k * R) / K, r1 = ((k + 1) * R) / K - 1;
+            int r0 = band_rows[k].first, r1 = band_rows[k].second - 1;
             for (auto it = row_grid.lower_bound(r0); it != row_grid.end() && it->first <= r1; ++it) {
                 gy0[k] = std::min(gy0[k], it->second.first);
                 gy1[k] = std::max(gy1[k], it->second.second);
@@ -660,12 +689,12 @@ class HeAPPlacer
         }
         std::vector<int> n(K, 0), luts(K, 0);
         int unknown = 0, fixed_cells = 0, too_tall = 0;
+        std::set<CellInfo *> tall_roots;
         // A chain taller than a band cannot lie in one: cft-fp256's widest
         // adders are 90 CARRY4s, and bands of 87 rows left the legaliser no
         // place for them (2026-09-24, ab98706). Such a chain - root and every
         // member - is left to the placer, unconstrained, and counted.
-        const int band_rows = R / K;
-        std::map<CellInfo *, int> height; // chain root -> rows it spans
+        std::map<CellInfo *, int> height; // chain root -> grid rows it spans
         auto chain_height = [&](CellInfo *root) {
             auto h = height.find(root);
             if (h != height.end())
@@ -698,8 +727,11 @@ class HeAPPlacer
             CellInfo *root = c->second.get();
             while (root->constr_parent != nullptr)
                 root = root->constr_parent;
-            if (chain_height(root) > band_rows - 4) {
+            // a chain spans its grid rows, clock rows included (the packer's
+            // offsets skip them); it fits a band whose grid rows hold it
+            if (chain_height(root) > gy1[a.first] - gy0[a.first]) {
                 too_tall++;
+                tall_roots.insert(root);
                 continue;
             }
             ctx->constrainCellToRegion(c->first, region[a.first]);
@@ -740,17 +772,14 @@ class HeAPPlacer
             log_error("NEXTPNR_DENSE_BANDS: %d of the %d cells '%s' names are not in this design - a file made from "
                       "another netlist\n",
                       unknown, int(assign.size()), path);
-        int tall_chains = 0;
-        for (auto &h : height)
-            if (h.second > band_rows - 4)
-                tall_chains++;
+        int tall_chains = int(tall_roots.size());
         log_info("dense bands: %d bands of %d slice rows from '%s'; %d cells constrained, %d fixed by the design, %d "
-                 "not in it, %d left free in %d chains taller than %d rows\n",
+                 "not in it, %d left free in %d chains taller than their band\n",
                  K, R, path, int(assign.size()) - unknown - fixed_cells - too_tall, fixed_cells, unknown, too_tall,
-                 tall_chains, band_rows - 4);
+                 tall_chains);
         for (int k = 0; k < K; k++)
-            log_info("    band %d: slice rows %d-%d, grid rows %d-%d, %d cells, %d of them LUTs\n", k, (k * R) / K,
-                     ((k + 1) * R) / K - 1, gy0[k], gy1[k], n[k], luts[k]);
+            log_info("    band %d: slice rows %d-%d, grid rows %d-%d, %d cells, %d of them LUTs\n", k,
+                     band_rows[k].first, band_rows[k].second - 1, gy0[k], gy1[k], n[k], luts[k]);
     }
 
     // [dense] The block of each placed cell, for NEXTPNR_PLACER_BLOCK_WEIGHT

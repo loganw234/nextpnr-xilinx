@@ -38,6 +38,12 @@ levels = int(sys.argv[3]) if len(sys.argv) > 3 else 2
 balance = float(sys.argv[4]) if len(sys.argv) > 4 else 0.02
 passes = int(sys.argv[5]) if len(sys.argv) > 5 else 8
 ROWS = 350                 # slice rows of the XC7K325T
+# The clock (HCLK) row falls every 25 slice rows, and the packer writes a
+# carry chain's row offsets as -(i + i/25): a chain of more than 25 CARRY4s
+# starts at a 25-row group's first row, and a shorter one lies inside one
+# group. So bands end on group boundaries: bands cut at 87.5 and 43.75 rows
+# left a 36-row chain no legal start (2026-09-24, 05c2900).
+GROUP = 25
 RAM_PER_ROW = 445 / ROWS   # RAMB36 sites per slice row (a RAMB18 is half of one)
 MAX_PINS = 100
 FANOUT_GLOBAL = 2000
@@ -138,18 +144,23 @@ band_hi = [float(ROWS)] * V
 
 
 def split(members, r0, r1):
-    """FM bisection of MEMBERS (the vertices of rows r0..r1) at the middle row.
+    """FM bisection of MEMBERS (the vertices of rows r0..r1) at the group
+    boundary nearest the middle row, each side's share of the cells and RAMs
+    in proportion to its rows.
 
     FM from one start finds one local optimum, and on this netlist the start
     decides a lot (the placement's split at the middle row: 14,215 -> 7,524;
     at the weighted median: 14,552 -> 12,654). So it starts several times - at
     the middle row, and at the placement order's 47%, 50% and 53% weights -
     and keeps the least cut that ends within BALANCE of even."""
-    mid = (r0 + r1) / 2
+    groups = round((r1 - r0) / GROUP)
+    mid = r0 + GROUP * (groups // 2)
+    frac = (mid - r0) / (r1 - r0)                  # the bottom side's share of the rows
     mem = set(members)
     W = sum(weight[v] for v in members)
-    lo, hi = (0.5 - balance) * W, (0.5 + balance) * W
-    ram_cap = 0.9 * RAM_PER_ROW * (mid - r0)       # each half holds half the rows
+    top_share = (1 - frac) * W
+    lo, hi = top_share - balance * W, top_share + balance * W
+    ram_caps = (0.9 * RAM_PER_ROW * (mid - r0), 0.9 * RAM_PER_ROW * (r1 - mid))
     ram_all = sum(ram[v] for v in members)
     enets = {}
     for v in members:
@@ -179,7 +190,7 @@ def split(members, r0, r1):
         return s
 
     starts = [("the middle row", {v: (1 if vy[v] >= mid else 0) for v in members})]
-    starts += [(f"{int(100 * f)}% of the weight", start_at(f)) for f in (0.47, 0.50, 0.53)]
+    starts += [(f"{int(100 * f)}% of the weight", start_at(f)) for f in (frac - 0.03, frac, frac + 0.03)]
 
     def fm(side):
         for v in members:
@@ -234,9 +245,9 @@ def split(members, r0, r1):
                         to_top = side[v] == 0
                         nw1 = cw1 + weight[v] if to_top else cw1 - weight[v]
                         nram1 = cram1 + ram[v] if to_top else cram1 - ram[v]
-                        if not (lo <= nw1 <= hi or abs(nw1 - W / 2) < abs(cw1 - W / 2)):
+                        if not (lo <= nw1 <= hi or abs(nw1 - top_share) < abs(cw1 - top_share)):
                             continue
-                        if ram[v] and (nram1 > ram_cap or ram_all - nram1 > ram_cap):
+                        if ram[v] and (nram1 > ram_caps[1] or ram_all - nram1 > ram_caps[0]):
                             continue
                         chosen = v
                         break
@@ -294,7 +305,7 @@ def split(members, r0, r1):
         for s in (0, 1):
             while True:
                 on = sum(ram[v] for v in members if side[v] == s)
-                if on <= ram_cap:
+                if on <= ram_caps[s]:
                     break
                 cands = [v for v in members if side[v] == s and ram[v] and not fixed[v]]
                 if not cands:
@@ -333,14 +344,15 @@ def split(members, r0, r1):
         raise SystemExit(f"rows {r0}-{r1}: no start ended within the balance")
     side, first, end, w1, ram1 = best
     print(f"  rows {r0:5.1f}-{r1:5.1f} at {mid:5.1f}: {len(members)} vertices, kept cut {end}, "
-          f"top {100 * w1 / W:.1f}% of the cells, RAMs {ram_all - ram1:.1f} / {ram1:.1f} of {ram_cap:.0f} a side")
+          f"top {100 * w1 / W:.1f}% of the cells (its rows: {100 * (1 - frac):.1f}%), RAMs "
+          f"{ram_all - ram1:.1f} of {ram_caps[0]:.0f} below, {ram1:.1f} of {ram_caps[1]:.0f} above")
     top = [v for v in members if side[v] == 1]
     bottom = [v for v in members if side[v] == 0]
     for v in top:
         band_lo[v] = mid
     for v in bottom:
         band_hi[v] = mid
-    return bottom, top
+    return bottom, top, mid
 
 
 regions = [(list(range(V)), 0.0, float(ROWS))]
@@ -348,12 +360,14 @@ for lvl in range(levels):
     print(f"level {lvl + 1}:")
     nxt = []
     for members, r0, r1 in regions:
-        b, t = split(members, r0, r1)
-        mid = (r0 + r1) / 2
+        if round((r1 - r0) / GROUP) < 2:
+            nxt.append((members, r0, r1))     # one group: nothing to split
+            continue
+        b, t, mid = split(members, r0, r1)
         nxt += [(b, r0, mid), (t, mid, r1)]
     regions = nxt
 
-K = 2 ** levels
+K = len(regions)
 band_of_v = [0] * V
 for k, (members, r0, r1) in enumerate(regions):
     for v in members:
@@ -362,6 +376,8 @@ with open(out, "w") as f:
     f.write(f"# dense bands: {K} bands of the {ROWS} slice rows, band 0 the bottom; "
             f"recursive FM bisection of {path}, balance {balance}, {passes} passes a split\n")
     f.write(f"bands {K} rows {ROWS}\n")
+    for k, (members, r0, r1) in enumerate(regions):
+        f.write(f"band {k} {int(r0)} {int(r1)}\n")
     for i, n in enumerate(names):
         f.write(f"{band_of_v[vid[root[i]]]} {n}\n")
 print(f"{out}: {len(names)} cells in {K} bands; {time.time() - t0:.0f} s in all")
