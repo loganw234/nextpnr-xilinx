@@ -1,0 +1,2 @@
+# As p-block1, with weight 4. For dense/place.sh.
+NEXTPNR_PLACER_BLOCK_WEIGHT=4

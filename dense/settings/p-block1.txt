@@ -1,0 +1,4 @@
+# Each cell tied to its block's mean position by a net of weight 1 (efa4e31
+# on): blocks read from the net names at depth 4 (one block per lane),
+# blocks of at least 200 cells. For dense/place.sh.
+NEXTPNR_PLACER_BLOCK_WEIGHT=1
