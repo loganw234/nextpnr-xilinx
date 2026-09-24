@@ -1,0 +1,5 @@
+# HeAP run for at least 40 iterations, keeping the LAST legal placement -
+# the most converged, anchors strongest - rather than the one of least
+# wirelength. For dense/place.sh.
+NEXTPNR_PLACER_MIN_ITER=40
+NEXTPNR_PLACER_KEEP=last

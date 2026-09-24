@@ -1,0 +1,4 @@
+# HeAP's stall limit at 20, keeping the last legal placement. For
+# dense/place.sh.
+NEXTPNR_PLACER_MAX_STALL=20
+NEXTPNR_PLACER_KEEP=last
