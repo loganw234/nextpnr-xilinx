@@ -1,0 +1,10 @@
+# p-bands4-rudy1-cv with u_krnl.arr_rdy's driver replicated 32 ways
+# (NEXTPNR_REPLICATE): the lanes' pipeline enable, one LUT6 driving 31,968
+# pins across the chip, split by where p-b4r1cv-sd put its sinks into 32
+# groups of 466 to 1,587 (frozen at /bench/replicate/20260925-arr_rdy-k32
+# with PROVENANCE). For dense/place.sh; its report.json against
+# p-b4r1cv-rpt's.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1
+NEXTPNR_REPLICATE=/bench/replicate/20260925-arr_rdy-k32/groups.txt

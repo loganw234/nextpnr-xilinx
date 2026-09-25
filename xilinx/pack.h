@@ -125,6 +125,9 @@ struct XilinxPacker
     // [dense] NEXTPNR_PACK_LUT_PAIRS: two LUTs that share an input net and
     // together read at most five nets share one physical LUT (pack.cc)
     void pair_luts();
+    // [dense] NEXTPNR_REPLICATE: a high-fanout net's driver copied once per
+    // group of its sinks, as a file names them (pack.cc)
+    void replicate_drivers();
 
     bool is_constrained(const CellInfo *cell);
     void pack_muxfs();

@@ -22,6 +22,8 @@
 #include <boost/optional.hpp>
 #include <iterator>
 #include <queue>
+#include <sstream>
+#include <fstream>
 #include <unordered_set>
 #include "cells.h"
 #include "chain_utils.h"
@@ -530,6 +532,113 @@ void XilinxPacker::pack_lutffs()
         ++pairs;
     }
     log_info("Constrained %d LUTFF pairs.\n", pairs);
+}
+
+// [dense] NEXTPNR_REPLICATE=FILE: copy the driver of a high-fanout net once
+// per group of its sinks, and move each group's sink pins to their own copy,
+// as Vivado's fanout optimisation replicates the driver of a high-fanout
+// net. On cft-fp256's board netlist u_krnl.arr_rdy, the lanes' pipeline
+// enable, is one LUT6 driving 31,968 pins (25,617 FF CE, 5,890 SRL CE)
+// across the chip (dense/LEDGER.md, 2026-09-25).
+//
+// FILE is dense/replicate_groups.py's: "replicate <net> <K>", then
+// "<group> <cell> <port>" a line, groups 0..K-1, cells and ports as a packed
+// design names them (the pass runs after pack_lutffs). Group 0 stays on the
+// driver; each copy is the driver's type, parameters and attributes (no BEL)
+// on the same input nets, driving a net of its own, <net>$dense_rep<k>. A
+// pin the file names that is not on the net is counted; more than 0.1% of
+// the lines is refused as a file made from another netlist. Pins of the net
+// the file does not name stay on the driver. Unset, nothing changes.
+void XilinxPacker::replicate_drivers()
+{
+    const char *path = getenv("NEXTPNR_REPLICATE");
+    if (path == nullptr)
+        return;
+    std::ifstream in(path);
+    if (!in)
+        log_error("NEXTPNR_REPLICATE: cannot read '%s'\n", path);
+    std::string line, netname;
+    int K = 0, lineno = 0;
+    std::vector<std::tuple<int, std::string, std::string>> moves;
+    while (std::getline(in, line)) {
+        lineno++;
+        if (line.empty() || line[0] == '#')
+            continue;
+        std::istringstream ss(line);
+        if (K == 0) {
+            std::string kw;
+            if (!(ss >> kw >> netname >> K) || kw != "replicate" || K < 2 || K > 1024)
+                log_error("NEXTPNR_REPLICATE: line %d of '%s' is not 'replicate <net> <K>' (K from 2 to 1024)\n",
+                          lineno, path);
+            continue;
+        }
+        int g = -1;
+        std::string cell, port;
+        if (!(ss >> g >> cell >> port) || g < 0 || g >= K)
+            log_error("NEXTPNR_REPLICATE: line %d of '%s' is not '<group 0..%d> <cell> <port>'\n", lineno, path,
+                      K - 1);
+        moves.emplace_back(g, cell, port);
+    }
+    if (K == 0)
+        log_error("NEXTPNR_REPLICATE: '%s' has no 'replicate <net> <K>' line\n", path);
+    auto nit = ctx->nets.find(ctx->id(netname));
+    if (nit == ctx->nets.end())
+        log_error("NEXTPNR_REPLICATE: net '%s' (from '%s') is not in this design\n", netname.c_str(), path);
+    NetInfo *net = nit->second.get();
+    CellInfo *drv = net->driver.cell;
+    if (drv == nullptr)
+        log_error("NEXTPNR_REPLICATE: net '%s' has no driver\n", netname.c_str());
+    const IdString drv_port = net->driver.port;
+    const int users_before = int(net->users.size());
+    std::vector<NetInfo *> copies(K, nullptr);
+    copies[0] = net;
+    for (int k = 1; k < K; k++) {
+        IdString cname = ctx->id(drv->name.str(ctx) + "$dense_rep" + std::to_string(k));
+        std::unique_ptr<CellInfo> c = create_cell(ctx, drv->type, cname);
+        c->params = drv->params;
+        c->attrs = drv->attrs;
+        c->attrs.erase(ctx->id("BEL"));
+        c->attrs.erase(ctx->id("NEXTPNR_BEL"));
+        for (auto &p : drv->ports) {
+            if (!c->ports.count(p.first)) {
+                c->ports[p.first].name = p.first;
+                c->ports[p.first].type = p.second.type;
+            }
+            if (p.second.type == PORT_IN && p.second.net != nullptr)
+                connect_port(ctx, p.second.net, c.get(), p.first);
+        }
+        NetInfo *n = ctx->createNet(ctx->id(netname + "$dense_rep" + std::to_string(k)));
+        connect_port(ctx, n, c.get(), drv_port);
+        copies[k] = n;
+        new_cells.push_back(std::move(c));
+    }
+    flush_cells();
+    int moved = 0, missing = 0;
+    std::vector<int> per(K, 0);
+    for (auto &m : moves) {
+        int g = std::get<0>(m);
+        auto cit = ctx->cells.find(ctx->id(std::get<1>(m)));
+        IdString pid = ctx->id(std::get<2>(m));
+        if (cit == ctx->cells.end() || !cit->second->ports.count(pid) || cit->second->ports.at(pid).net != net) {
+            missing++;
+            continue;
+        }
+        per[g]++;
+        if (g == 0)
+            continue;
+        disconnect_port(ctx, cit->second.get(), pid);
+        connect_port(ctx, copies[g], cit->second.get(), pid);
+        moved++;
+    }
+    if (missing > int(moves.size()) / 1000)
+        log_error("NEXTPNR_REPLICATE: %d of the %d pins '%s' names are not on net '%s' - a file made from another "
+                  "netlist?\n",
+                  missing, int(moves.size()), path, netname.c_str());
+    log_info("NEXTPNR_REPLICATE: net '%s' (%d pins, driver '%s') split %d ways: %d pins moved to %d copies of the "
+             "driver, groups of %d to %d pins, %d left on the driver unnamed by the file, %d named but not found\n",
+             netname.c_str(), users_before, drv->name.c_str(ctx), K, moved, K - 1,
+             *std::min_element(per.begin(), per.end()), *std::max_element(per.begin(), per.end()),
+             int(net->users.size()) - per[0], missing);
 }
 
 // [dense] NEXTPNR_PACK_LUT_PAIRS=1: pair LUTs into the 6LUT and 5LUT of one
@@ -1594,6 +1703,7 @@ bool Arch::pack()
         packer.pack_ffs();
         packer.finalise_muxfs();
         packer.pack_lutffs();
+        packer.replicate_drivers();
         packer.pair_luts();
     } else {
         USPacker packer;
