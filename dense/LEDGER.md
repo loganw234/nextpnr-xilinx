@@ -1374,3 +1374,160 @@ prices, cap 20):
 the current `dense/bands.py`, as 20260925-a4-frozen-v2 (started 10:20),
 so that it and the `-dff` netlist's bands come from the same script.
 The `-dff` synthesis runs again from 09:43.
+
+## 2026-09-25 - rounds 26-31: the repair-free placement leads early and the heat placement late; 70 MHz changes nothing yet; arr_rdy, what Vivado did with it, and a replication pass
+
+**Round 26's placements** (16ab8d2; the repair moved nothing in either):
+
+| placement | wirelength | row 175 | row bands' mean peak | RUDY-V above 100 / 99.9% / max | horizontal above 20 / 30 |
+|---|---|---|---|---|---|
+| p-b4r1cvh5-sd (cv + the heat of base-b4r1h5) | 7,692,562 | 7,699 | 12,056 | 93,784 / 183 / 214 | 170,577 / 35,317 |
+| p-b4r1cvcs-sd (cv + the carry switch: 4,574 adopted) | 7,752,292 | 8,599 | 11,592 | 88,514 / 190 / 206 | 192,910 / 60,540 |
+
+**The routes** (default prices, cap 20). The overuse at each iteration:
+
+| route | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| base-b4r1 (derated, repaired placement) | 308,437 | 60,087 | 24,770 | 16,627 | 13,501 |
+| base-b4r1h5 (+ heat, repaired) | 296,854 | 56,344 | 21,662 | 14,067 | 11,017 |
+| base-b4r1cv (repair-free) | 292,454 | 52,808 | 21,720 | 15,434 | 13,194 |
+| base-b4r1cv50 (cv, 8 of 16 LUT bels) | 293,561 | 56,233 | 25,801 | stopped | |
+| base-b4r1cvh5 (cv + heat) | 300,732 | 57,682 | | | |
+| base-b4r1cvcs (cv + carry switch) | 311,979 | 65,401 | stopped | | |
+| base-b4r1cv-f70 (cv at 70 MHz) | 292,454 | 52,808 | | | |
+
+- The repair-free placement is the best at iterations 1-2 (-12.1% at 2).
+- The heat placement overtakes it from iteration 4: 11,017 against
+  13,194 at 5.
+- The heat placement's lead over base-b4r1 keeps growing: -18.4% at 5,
+  -22.8% at 12 (5,849 against 7,577).
+- base-b4r1 is at 6,230 at iteration 19.
+
+**Stopped by decision:**
+
+- 13:07:40, base-bands4-long: its tail went to 4,747 at iteration 36,
+  falling 2-3% an iteration with no plateau. Its memory went to the
+  timing placements.
+- 13:11, base-b4r1cv50: +18.8% over base-b4r1cv at iteration 3.
+- 13:11, base-b4r1cvcs: +23.8% over base-b4r1cv at iteration 2, and
+  +8.8% over base-b4r1. On the repair-free placement the carry switch
+  hurts.
+
+**The FMA lane checked again with NEXTPNR_PLACER_CELL_VALID**
+(`dense/check_pack.sh`, 5694c89 adds EXTRA_ENV for the switched run; build
+16ab8d2; outputs in /data/dense-check/fma64-16ab8d2-cv):
+
+| | control | carry switch + pairs + CELL_VALID |
+|---|---|---|
+| clusters the repair moved | 2,163 | 0 |
+| physical LUTs | 6,386 | 5,219 |
+| LUT cells checked | 7,241: PASS | 7,023: PASS |
+| bitstream | written | written |
+| nextpnr's Fmax | 67.70 MHz | 73.48 MHz |
+
+The control reproduces bf27a42's control exactly (7,241 cells, 6,386 LUTs,
+67.70 MHz). The repair moved a fifth of this small design too.
+
+**70 MHz.** Logan: "Low speed is acceptable if it can close, a 70MHz
+clock is perfectly acceptable as a tradeoff for an open toolchain".
+
+- f77d75d gives bench.sh and place.sh `--freq MHZ`.
+- p-b4r1cv-f70 placed at 70 MHz is the same placement as p-b4r1cv-sd at
+  100: same wirelength (7,477,208), same crossings, same RUDY. nextpnr's
+  timing_driven is on, but the target does not reach HeAP.
+- Routed at 70 MHz (base-b4r1cv-f70), the overuse equals the 100 MHz
+  route's exactly at iterations 1 and 2 (292,454 and 52,808).
+- The likely reason: nextpnr's post-placement estimate of the design is
+  19 MHz, so nearly every path fails at both targets and the router's
+  criticalities are saturated at both.
+
+Correction: f77d75d's message says place.sh's PROVENANCE has a freq line.
+The line is in the placement's summary.txt; PROVENANCE carries the
+target in its command line.
+
+**The timing estimates** nextpnr prints after placement:
+
+| placement | estimated Fmax |
+|---|---|
+| the frozen placement (0.9.6, no bands) | 22.37 MHz |
+| p-b4r1-sd | 18.45 MHz |
+| p-b4r1cv-sd | 19.15 MHz |
+| p-b4r1h5-sd | 19.42 MHz |
+| p-b4r1cv50-sd | 19.67 MHz |
+
+At 70 MHz p-b4r1cv-f70's slack histogram runs from -37,945 ps to +14,095
+ps. Its largest bin is -4,119 to -1,517 ps, about 14,000 endpoints. The
+placer is not timing-driven here, and the bands are cut by connectivity
+alone.
+
+This fork's --report writes an empty critical_paths list
+(common/timing.cc reportJson). 1d11ac0 has place.sh write report.json
+anyway, for its Fmax and utilization. 24a8d28 adds
+NEXTPNR_PLACER_CRIT_PATH: placer1's closing timing analysis also prints
+the critical path. It is logging only, and place.sh sets it.
+
+**u_krnl.arr_rdy** is the lanes' pipeline enable (cft_lanes: `en = (ph >=
+ph_last)`, `in_ready = en`, fed back by the engine). In the bench netlist
+it is driven by one LUT6, not a register. Its 31,968 pins:
+
+- 25,617 FDRE CE;
+- 5,890 SRL16E CE;
+- 102 FDSE CE;
+- 80 DSP CE;
+- 172 LUT2 inputs.
+
+The next nets down are an inverted reset (3,776 FDRE R and FDSE S) and
+u_krnl.ap_rst_n (2,045).
+
+**What Vivado did with it** (Data/runs/2026-09-23-k325t-vivado-imulreg,
+the board configuration, vivado.log):
+
+- opt_design's BUFG optimisation: "Inserted BUFG to drive high-fanout
+  reset|set|enable net ... u_lanes/g_bank256.u_fma/g_mul_multi.u_mulpass/ph_reg[0]";
+- phys_opt_design: one high-fanout net replicated 7 times
+  (g_alignseg.u_alignseg/dir_r_reg[0]__0);
+- place_design's BUFG insertion: two candidates found, none inserted
+  ("Placement/Routing Conflicts").
+
+In Vivado's netlist the enable comes from a phase-register bit, and the
+global network carries it.
+
+- **The path exists in 7-series.** INT tiles reach CE from the global
+  lines: GCLK_B* drives GFAN0/1, and GFAN0/1 drive CTRL0/1 (prjxray-db
+  tile_type_INT_L/R). nextpnr's routeClock does not exclude GFAN.
+- **Why not a BUFG here.** openXC7's routeClock notes that a fabric
+  signal entering BUFGCTRL_I0 through the CLK_BUFG IMUX pip "does NOT
+  deliver a working clock", and nothing here can test that on hardware.
+- **Why replication.** It is plain fabric logic, which
+  `dense/fasm_lut_check.py` can check.
+
+**c2a7e3f: NEXTPNR_REPLICATE** (xilinx/pack.cc, after pack_lutffs) copies
+a net's driver once per group of its sinks. The groups come from
+`dense/replicate_groups.py`: the sink pins k-means-clustered by their
+tiles in a placement. The file is frozen at
+~/dense-bench/replicate/20260925-arr_rdy-k32, with PROVENANCE; the script
+that ran matches the committed one's sha256. It was cut from
+p-b4r1cv-sd:
+
+- the driver sits at (113, 274);
+- 31,968 pins in 32 groups of 466 to 1,587, after 68 k-means iterations;
+- the pins as the packed design names them: CE 25,719, WE 5,890, A1 114,
+  A2 93, CEA2 40, CEB2 40, CEM 24, SR 18.
+
+**Rounds 29-31:**
+
+- Round 29 (p-b4r1cv-rpt, report only) is superseded by round 31: this
+  fork's report carries no path.
+- Round 30 (the replication placement on c2a7e3f) was stopped before it
+  placed, to run with the path switch instead.
+- Round 31 (24a8d28) places p-b4r1cv-cp, which must be IDENTICAL to
+  p-b4r1cv-sd, and p-b4r1cvrep32-sd, each printing its critical path.
+
+**Also running:**
+
+- The `-dff` synthesis again, from 09:43: over four hours so far, its
+  ABC step working through the flip-flops of the whole tile.
+- The original netlist's aligned 4 bands cut again by 16ab8d2's
+  `dense/bands.py`: 20260925-a4-frozen-v2, 224 s, PROVENANCE there. They
+  are for the comparison with the `-dff` netlist, which
+  ~/dense-dff-bench.sh runs once the synthesis ends.
