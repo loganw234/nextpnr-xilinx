@@ -1,0 +1,7 @@
+# The derated 4 bands (p-bands4-rudy1) with NEXTPNR_PLACER_CELL_VALID: the
+# legaliser and the refining swaps ask isValidBelForCell, so the arch's
+# post-placement repair should find almost nothing to move (48,080 clusters
+# in p-b4r1-sd). For dense/place.sh at the default seed.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1

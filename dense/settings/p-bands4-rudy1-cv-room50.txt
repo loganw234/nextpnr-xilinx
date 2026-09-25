@@ -1,0 +1,7 @@
+# p-bands4-rudy1-cv with every tile's LUT and FF room at 8 of 16 bels
+# (NEXTPNR_PLACER_LUT_ROOM=0.5): with the legaliser refusing 5LUT bels to
+# unpaired LUTs, a tile holds 8 of them, and the spreader should count 8.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1
+NEXTPNR_PLACER_LUT_ROOM=0.5

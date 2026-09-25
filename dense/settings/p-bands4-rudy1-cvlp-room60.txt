@@ -1,0 +1,8 @@
+# p-bands4-rudy1-cv with LUT pairs and 9 of 16 LUT bels a tile
+# (NEXTPNR_PLACER_LUT_ROOM=0.6): a pair fills both bels of its site, so
+# with about a quarter of the LUTs paired a tile holds more than 8 LUT cells.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1
+NEXTPNR_PACK_LUT_PAIRS=1
+NEXTPNR_PLACER_LUT_ROOM=0.6
