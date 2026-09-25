@@ -1,0 +1,8 @@
+# The -dff netlist (synth_xilinx -dff: ABC9 merges the registers it proves
+# equivalent) on its own aligned 4 bands, cut by the same script and
+# arguments from its plain placement, derated (RUDY 1), with
+# NEXTPNR_PLACER_CELL_VALID. For dense/place.sh --bench /data/dense-bench-dff
+# at the default seed; compare with p-a4v2-rudy1-cv on ~/dense-bench.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260925-dff-a4/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1
