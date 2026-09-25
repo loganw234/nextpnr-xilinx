@@ -1327,3 +1327,50 @@ iterations 1-5:
 
 base-b4r1 is at 6,684 at iteration 15 (plain: 7,810). The plain route is
 at 5,233 at iteration 32.
+
+## 2026-09-25 - the placer's own placement, left alone: the repair moves nothing, and wirelength falls 4-6%
+
+Round 25 (16ab8d2, the derated 4 bands, the default seed) with
+`NEXTPNR_PLACER_CELL_VALID=1`:
+
+| placement | clusters the repair moved | wirelength | row 175 | row bands' mean peak | RUDY-V above 100 / 99.9% / max | horizontal above 20 / 30 | densest band |
+|---|---|---|---|---|---|---|---|
+| p-b4r1-sd (without) | 48,080 | 7,809,287 | 8,014 | 11,378 | 101,601 / 171 / 195 | 391,323 / 175,407 | 4.47 |
+| p-b4r1cv-sd | 0 | 7,477,208 (-4.3%) | 7,522 | 11,812 | 88,541 / 175 / 193 | 168,931 / 42,299 | 4.41 |
+| p-b4r1cv50-sd (8 of 16 LUT bels) | 0 | 7,344,591 (-6.0%) | 7,699 | 11,461 | 111,297 / 201 / 240 | 169,603 / 49,610 | 4.26 |
+| p-b4r1cvlp60-sd (pairs, 9 of 16) | 0 | 7,857,439 | 8,640 | 11,637 | 159,004 / 238 / 330 | 230,400 / 86,596 | 4.52 |
+
+- With the switch the repair found nothing stranded: neither of its log
+  lines appears in any of the three logs.
+- The placement the router gets is now the one HeAP and the annealer
+  made.
+- p-b4r1cv-sd is the first placement below p-b4r1-sd on wirelength,
+  RUDY-V above 100, the crossings at row 175 and horizontal demand at
+  once. Horizontal demand falls by more than half. Only the row bands'
+  mean peak rises, by 3.8%.
+- HeAP's legalisation took longer only in its first iteration (97 and
+  105 s against 53 s).
+- HeAP's legal wirelength at iteration 8 was 8,467,677 with the switch
+  and 8,101,714 with the halved room, against 8,381,713 without. The
+  repair's moves came after HeAP's legal placement, and those are what
+  the switch removes.
+
+**Stopped by decision** at 10:43: the restarted base-b4r1cs, base-b4r1lp
+and base-b4c50. They measure placements the repair had moved a fifth of,
+and the switches are to be measured again on placements it leaves alone.
+
+**Launched** (round 26: settings 664e5ec, binary 16ab8d2, default
+prices, cap 20):
+
+- routes:
+  - base-b4r1cv, against base-b4r1;
+  - base-b4r1cv50;
+- placements, for the next routes:
+  - p-b4r1cvh5-sd: the switch with base-b4r1h5's heat derating. The
+    heatmap comes from a route of a repaired placement.
+  - p-b4r1cvcs-sd: the switch with the carry switch.
+
+**Also running:** the original netlist's aligned 4 bands cut again by
+the current `dense/bands.py`, as 20260925-a4-frozen-v2 (started 10:20),
+so that it and the `-dff` netlist's bands come from the same script.
+The `-dff` synthesis runs again from 09:43.
