@@ -546,9 +546,11 @@ void XilinxPacker::pack_lutffs()
 // design names them (the pass runs after pack_lutffs). Group 0 stays on the
 // driver; each copy is the driver's type, parameters and attributes (no BEL)
 // on the same input nets, driving a net of its own, <net>$dense_rep<k>. A
-// pin the file names that is not on the net is counted; more than 0.1% of
-// the lines is refused as a file made from another netlist. Pins of the net
-// the file does not name stay on the driver. Unset, nothing changes.
+// pin is found by its cell, the port a hint (a placed design may have moved
+// a LUT's input to another A pin). A named cell with no input on the net is
+// counted; more than 0.1% of the lines is refused as a file made from
+// another netlist. Pins of the net the file does not name stay on the
+// driver. Unset, nothing changes.
 void XilinxPacker::replicate_drivers()
 {
     const char *path = getenv("NEXTPNR_REPLICATE");
@@ -613,32 +615,56 @@ void XilinxPacker::replicate_drivers()
         new_cells.push_back(std::move(c));
     }
     flush_cells();
-    int moved = 0, missing = 0;
+    // A pin is found by its cell. The file's port is taken when the net is
+    // on it; otherwise whichever input ports of that cell carry the net are
+    // moved. The file comes from a placed design, and after placement
+    // fixupPlacement lays a shared LUT's inputs onto other A pins than
+    // packing gave them: 120 of arr_rdy's 31,968 pins (dense/LEDGER.md,
+    // 2026-09-25).
+    int moved = 0, missing = 0, by_cell = 0;
     std::vector<int> per(K, 0);
     for (auto &m : moves) {
         int g = std::get<0>(m);
         auto cit = ctx->cells.find(ctx->id(std::get<1>(m)));
+        if (cit == ctx->cells.end()) {
+            missing++;
+            continue;
+        }
+        CellInfo *ci = cit->second.get();
+        std::vector<IdString> pins;
         IdString pid = ctx->id(std::get<2>(m));
-        if (cit == ctx->cells.end() || !cit->second->ports.count(pid) || cit->second->ports.at(pid).net != net) {
+        if (ci->ports.count(pid) && ci->ports.at(pid).net == net)
+            pins.push_back(pid);
+        else {
+            for (auto &p : ci->ports)
+                if (p.second.type == PORT_IN && p.second.net == net)
+                    pins.push_back(p.first);
+            if (!pins.empty())
+                by_cell++;
+        }
+        if (pins.empty()) {
             missing++;
             continue;
         }
         per[g]++;
         if (g == 0)
             continue;
-        disconnect_port(ctx, cit->second.get(), pid);
-        connect_port(ctx, copies[g], cit->second.get(), pid);
-        moved++;
+        for (auto p : pins) {
+            disconnect_port(ctx, ci, p);
+            connect_port(ctx, copies[g], ci, p);
+            moved++;
+        }
     }
     if (missing > int(moves.size()) / 1000)
         log_error("NEXTPNR_REPLICATE: %d of the %d pins '%s' names are not on net '%s' - a file made from another "
                   "netlist?\n",
                   missing, int(moves.size()), path, netname.c_str());
     log_info("NEXTPNR_REPLICATE: net '%s' (%d pins, driver '%s') split %d ways: %d pins moved to %d copies of the "
-             "driver, groups of %d to %d pins, %d left on the driver unnamed by the file, %d named but not found\n",
+             "driver, groups of %d to %d pins, %d left on the driver unnamed by the file, %d named but not found, %d "
+             "found by their cell on another port\n",
              netname.c_str(), users_before, drv->name.c_str(ctx), K, moved, K - 1,
              *std::min_element(per.begin(), per.end()), *std::max_element(per.begin(), per.end()),
-             int(net->users.size()) - per[0], missing);
+             int(net->users.size()) - per[0], missing, by_cell);
 }
 
 // [dense] NEXTPNR_PACK_LUT_PAIRS=1: pair LUTs into the 6LUT and 5LUT of one
