@@ -1,0 +1,10 @@
+# The default router prices on p-b4r1lp-sd: the derated 4 bands with
+# NEXTPNR_PACK_LUT_PAIRS (14,896 pairs, 31,015 LUT input pins fewer:
+# 121,697 physical LUTs against 136,593, in 40,329 slices against 43,289).
+# Its RUDY and crossing metrics are worse than p-b4r1-sd's - the placer
+# packed the pairs tighter rather than spreading them - and those metrics
+# have misranked placements before. Route with --expect-placement at
+# p-b4r1lp-sd; compare with base-b4r1.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PACK_LUT_PAIRS=1

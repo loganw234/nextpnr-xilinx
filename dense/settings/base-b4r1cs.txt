@@ -1,0 +1,8 @@
+# The default router prices on p-b4r1cs-sd: the derated 4 bands with
+# NEXTPNR_PACK_CARRY_SHARED_S (4,574 S-LUTs with other users adopted into
+# their carry slot: 132,017 physical LUTs against 136,593, 232,200 nets
+# against 236,776, wirelength -2.8%). Route with --expect-placement at
+# p-b4r1cs-sd; compare with base-b4r1, which differs only in the switch.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PACK_CARRY_SHARED_S=1

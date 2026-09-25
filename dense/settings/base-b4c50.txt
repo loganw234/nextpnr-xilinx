@@ -1,0 +1,10 @@
+# The default router prices on p-b4c50-sd: the 4 bands with nearly every
+# tile's LUT and FF room at half (8 of a CLB tile's 16 LUT bels, its LUT6
+# sites; p-bands4-cap50). Wirelength 7,403,124 against p-b4r1-sd's
+# 7,809,287, row bands' mean peak 11,443 against 11,378. Route with
+# --expect-placement at p-b4c50-sd (placed by 3285910; this build must
+# place it identically); compare with base-b4r1.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=10
+NEXTPNR_PLACER_RUDY_PCT=1
+NEXTPNR_PLACER_RUDY_MIN=0.5
