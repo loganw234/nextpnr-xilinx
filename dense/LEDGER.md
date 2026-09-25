@@ -871,3 +871,42 @@ but the default seed's sum rises. Whether the peak or the sum predicts
 the tail is for the router: `base-b4r1` (the default prices on the
 derated default seed, ecb74ec, the 322498b binary, cap 20) began at
 23:02. It differs from base-bands4-long only in the derating.
+
+## 2026-09-25 - the derating routes better, and the gap widens; the rising price slows the tail
+
+The default prices on the same 4 bands, the same seed and the same cap:
+base-b4r1 (derated, NEXTPNR_PLACER_RUDY=1) against base-bands4-long
+(plain). base-b4r1's placement is IDENTICAL to p-b4r1-sd's.
+
+| iteration | plain | derated | change |
+|---|---|---|---|
+| 1 | 301,534 | 308,437 | +2.3% |
+| 2 | 61,437 | 60,087 | -2.2% |
+| 3 | 26,839 | 24,770 | -7.7% |
+| 4 | 18,628 | 16,627 | -10.7% |
+| 5 | 15,118 | 13,501 | -10.7% |
+| 6 | 13,192 | 11,644 | -11.7% |
+
+- The derated route at iteration 6 is where the plain one was at
+  iteration 8, and the gap widens.
+- The derated placement's RUDY sum above 100 was the higher (101,601
+  against 75,333) and its peak the lower (195 against 208). For the tail,
+  which is a hotspot, the peak is the better guide.
+- The plain run reads 6,610 at iteration 21, falling 1 to 4% an
+  iteration.
+
+**Stopped at 02:36:**
+
+- grow15-bands4: the rising price led early (54,265 and 21,700) and
+  trails late (11,821 against 10,469 at iteration 9);
+- altwg-bandsA8: flat near 5,700 from iteration 3 to 13.
+
+**Launched on the derated placement** (eeb7d1e, the 322498b binary, cap
+20):
+
+- `altw-b4r1`: alt-weights, which began at 9,926 and stalled near 5,500
+  on the plain placement;
+- `hist2-b4r1`: the default prices with the history weight 2 against 1,
+  the one price that keeps pushing a net that loses every negotiation.
+
+p-b4r2 (derating strength 2, floor 0.4) is placing at three seeds.
