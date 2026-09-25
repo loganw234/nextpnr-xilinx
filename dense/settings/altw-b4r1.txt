@@ -1,0 +1,10 @@
+# Mainline's alt-weights prices on the derated 4-band placement
+# (p-b4r1-sd). On the plain placement alt-weights began at 9,926 and
+# stalled near 5,500 (altw-bands4); the derated placement routes 11.7%
+# lower than the plain one at iteration 6 of the default prices.
+router2/initCurrCongWeight=5.0
+router2/histCongWeight=0.5
+router2/currCongWeightMult=0.0
+router2/estimateWeight=1.0
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1

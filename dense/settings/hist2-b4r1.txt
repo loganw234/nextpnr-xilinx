@@ -1,0 +1,7 @@
+# The default prices with the history weight doubled (2 against 1) on the
+# derated 4-band placement: the tail falls 1-4% an iteration and only
+# history keeps pushing a net that loses every negotiation. Compare with
+# base-b4r1, which differs only in this.
+router2/histCongWeight=2.0
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1

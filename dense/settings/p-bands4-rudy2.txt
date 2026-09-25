@@ -1,0 +1,5 @@
+# The 4 bands with the derating at strength 2 (scale by (reference /
+# demand)^2, no lower than 0.4). For dense/place.sh; three seeds.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=2
+NEXTPNR_PLACER_RUDY_MIN=0.4
