@@ -833,3 +833,41 @@ in one setting (4ff8546, f758d8a binary, cap 20):
   detour around the dense patch;
 - `grow15-bands4`: the price multiplied by 1.5 before each iteration's
   +2.
+
+## 2026-09-24 - derating the spreader where demand is high flattens the hotspots; the unaligned 4-band placement that routed best was the best of its three draws
+
+**The tail's levers on the router, at 21:57.** Each lever was one setting
+on base-bands4-long's placement and prices:
+
+- bbm8-bands4 (bounding-box margin 8) routed identically to margin 3
+  through five iterations: 301,534 / 61,437 / 26,839 / 18,628 / 15,118.
+  The box never limits a route here. Stopped.
+- grow15-bands4 (price x1.5 an iteration) led at first (54,265 and 21,700
+  against 61,437 and 26,839), but only 4.6% by iteration 5 (14,416
+  against 15,118).
+- altwg-bandsA8 (8 bands, alt-weights, price x1.5) flattened at about
+  5,800: 5,582 / 5,619 / 5,716 / 5,800 / 5,872 / 5,778.
+- base-bands4-long reads 8,227 at iteration 14, 3-4% an iteration.
+
+**The routed placement was a good draw.** RUDY vertical above 100 for the
+unaligned 4 bands at three seeds: 75,333 (the default seed, routed) /
+153,484 / 256,686. Placement is minutes, routing hours, so placing
+several seeds and routing the best by RUDY is a fair part of a flow.
+
+**NEXTPNR_PLACER_RUDY** (322498b). Before each analytic iteration the last
+legal placement's per-tile demand is estimated, and a tile above the
+90th percentile has its LUT and FF capacity scaled by reference / demand
+(strength 1, no lower than half); the spreader then moves cells out of
+hot tiles. The control MATCHes blinky. The same 4 bands at three seeds:
+
+| placement | RUDY vertical above 100 | 99.9th percentile | peak |
+|---|---|---|---|
+| plain: default / 2 / 3 | 75,333 / 153,484 / 256,686 | 180 / 223 / 256 | 208 / 256 / 376 |
+| derated: default / 2 / 3 | 101,601 / 158,143 / 160,180 | 171 / 201 / 239 | 195 / 235 / 264 |
+
+Each iteration derates some 8,200 tiles, some to the floor. Every seed's
+peak falls, by 6 to 30%. The worst seed's sum falls 38%, the mean 13.5%,
+but the default seed's sum rises. Whether the peak or the sum predicts
+the tail is for the router: `base-b4r1` (the default prices on the
+derated default seed, ecb74ec, the 322498b binary, cap 20) began at
+23:02. It differs from base-bands4-long only in the derating.
