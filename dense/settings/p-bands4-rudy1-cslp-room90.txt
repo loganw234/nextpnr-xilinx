@@ -1,0 +1,8 @@
+# p-bands4-rudy1-cslp (both packer switches) at 14 of 16 LUT bels a tile
+# (NEXTPNR_PLACER_LUT_ROOM=0.9): the carry switch and pairing together
+# packed the logic into 9% fewer slices.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PACK_CARRY_SHARED_S=1
+NEXTPNR_PACK_LUT_PAIRS=1
+NEXTPNR_PLACER_LUT_ROOM=0.9

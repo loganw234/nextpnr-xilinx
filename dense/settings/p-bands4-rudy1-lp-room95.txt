@@ -1,0 +1,8 @@
+# p-bands4-rudy1-lp (the derated 4 bands, LUT pairs) with every tile's LUT
+# and FF room at 15 of 16 bels (NEXTPNR_PLACER_LUT_ROOM=0.95): pairing
+# packed the logic into 7% fewer slices, and this gives some of it back.
+# For dense/place.sh at the default seed; compare with p-b4r1lp-sd.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PACK_LUT_PAIRS=1
+NEXTPNR_PLACER_LUT_ROOM=0.95
