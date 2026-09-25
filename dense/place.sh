@@ -8,8 +8,11 @@
 #
 # --seed N is nextpnr's own: another seed is another placement, which is how
 # a placer change is shown to hold beyond the one placement it was tried on.
-# --freq MHZ is the clock target (100 unless given); the placer is
-# timing-driven, so another target is another placement.
+# --freq MHZ is the clock target (100 unless given). nextpnr's timing_driven
+# is on, yet the derated 4 bands placed identically at 70 and 100 MHz
+# (dense/LEDGER.md, 2026-09-25): the target reaches the router, not HeAP.
+# The run also writes nextpnr's report.json: the post-placement critical
+# paths and Fmax, from nextpnr's delay estimates.
 #
 # THE SETTINGS are bench.sh's KEY=VALUE lines: a NEXTPNR_ name sets the run's
 # environment, anything else is --set. A router2/ key is refused - nothing is
@@ -90,7 +93,7 @@ OUT="$BENCH/placements/$(date +%Y%m%d-%H%M)-$NAME"
 mkdir -p "$OUT"
 cp "$SETCOPY" "$OUT/settings.txt"
 VERSION=$(docker run --rm -v "$BIN":/bindense:ro "$IMAGE" /bindense/nextpnr-xilinx --version 2>&1 | head -1)
-CMD="nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin --xdc /bench/placed.xdc --json /bench/netlist.json --freq $FREQ --timing-allow-fail --no-route --write /out/placed.json${SEED:+ --seed $SEED}$SETARGS"
+CMD="nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin --xdc /bench/placed.xdc --json /bench/netlist.json --freq $FREQ --timing-allow-fail --no-route --write /out/placed.json --report /out/report.json${SEED:+ --seed $SEED}$SETARGS"
 {
   echo "dense placement $NAME, $(date -Is), host $(hostname)"
   echo "bench      dense/place.sh at $(git -C "$ROOT" describe --tags --always --dirty 2> /dev/null || echo 'no git checkout')"
