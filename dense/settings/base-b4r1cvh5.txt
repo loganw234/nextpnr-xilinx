@@ -1,0 +1,9 @@
+# The default router prices on p-b4r1cvh5-sd: NEXTPNR_PLACER_CELL_VALID with
+# the heat derating of base-b4r1h5, the best route so far (18.8-19.6% under
+# base-b4r1 at iterations 6-8). Repair moved nothing. Route with
+# --expect-placement at p-b4r1cvh5-sd; compare with base-b4r1h5 and
+# base-b4r1cv.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1
+NEXTPNR_PLACER_HEAT=/bench/heat/20260925-b4r1-i10/heat.csv

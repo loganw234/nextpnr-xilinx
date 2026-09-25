@@ -1,0 +1,8 @@
+# The default router prices on p-b4r1cvcs-sd: NEXTPNR_PLACER_CELL_VALID with
+# the carry switch (4,574 S-LUTs adopted; 232,200 nets against 236,776).
+# Repair moved nothing. Route with --expect-placement at p-b4r1cvcs-sd;
+# compare with base-b4r1cv.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1
+NEXTPNR_PACK_CARRY_SHARED_S=1
