@@ -10,6 +10,9 @@
 #
 #   bash dense/check_pack.sh RTL_DIR BUILD_DIR OUT_DIR [TILEGRID_JSON]
 #
+# EXTRA_ENV="NAME=VALUE ..." adds settings to the switched run only (for
+# example NEXTPNR_PLACER_CELL_VALID=1), recorded in PROVENANCE.txt.
+#
 # RTL_DIR is a cft-fp256 checkout's rtl/ (its commit goes into OUT_DIR's
 # PROVENANCE.txt); BUILD_DIR holds the nextpnr-xilinx binary under test.
 set -euo pipefail
@@ -24,6 +27,7 @@ run () { docker run --rm -u "$(id -u):$(id -g)" -v "$RTL":/rtl:ro -v "$BIN":/bin
   echo "rtl      $RTL at $(git -C "$RTL" rev-parse HEAD 2>/dev/null) (tree $(git -C "$RTL" rev-parse HEAD:rtl 2>/dev/null))"
   echo "binary   $(run "$IMAGE" /bindense/nextpnr-xilinx --version 2>&1 | head -1) sha256 $(sha256sum "$BIN/nextpnr-xilinx" | cut -d' ' -f1)"
   echo "image    $IMAGE $(docker image inspect "$IMAGE" --format '{{.Id}}' | cut -c8-19)"
+  echo "extra    ${EXTRA_ENV:-none} (the switched run only)"
   echo "started  $(date -Is)"
 } > "$OUT/PROVENANCE.txt"
 cp "$XDC" "$OUT/harness.xdc"
@@ -34,7 +38,10 @@ run "$IMAGE" yosys -q -l synth.log -p "read_verilog -defer -sv -I /rtl /rtl/*.sv
 
 for v in control packed; do
   envs=()
-  [ $v = packed ] && envs=(-e NEXTPNR_PACK_CARRY_SHARED_S=1 -e NEXTPNR_PACK_LUT_PAIRS=1)
+  if [ $v = packed ]; then
+    envs=(-e NEXTPNR_PACK_CARRY_SHARED_S=1 -e NEXTPNR_PACK_LUT_PAIRS=1)
+    for kv in ${EXTRA_ENV:-}; do envs+=(-e "$kv"); done
+  fi
   mkdir -p "$OUT/$v"
   if run "${envs[@]}" "$IMAGE" /bindense/nextpnr-xilinx --chipdb /opt/openxc7/chipdb/xc7k325tffg900.bin \
        --xdc /out/harness.xdc --json /out/netlist.json --write /out/$v/routed.json --fasm /out/$v/out.fasm \
