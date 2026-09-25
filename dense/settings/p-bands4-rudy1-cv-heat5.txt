@@ -1,0 +1,8 @@
+# p-bands4-rudy1-cv with the heat derating that gave the best route so far
+# (base-b4r1h5: base-b4r1's overuse at iteration 10, 7x7 tiles, up to 0.5).
+# The heatmap comes from a route of a placement the repair had moved a
+# fifth of. For dense/place.sh at the default seed.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1
+NEXTPNR_PLACER_HEAT=/bench/heat/20260925-b4r1-i10/heat.csv

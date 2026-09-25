@@ -1,0 +1,9 @@
+# The default router prices on p-b4r1cv50-sd: base-b4r1cv's placement
+# settings with every tile's LUT room at 8 of 16 bels, the usable count
+# for unpaired LUTs (0 clusters moved; wirelength -6.0%, densest band 4.26
+# LUTs a used slice against 4.47). Route with --expect-placement at
+# p-b4r1cv50-sd; compare with base-b4r1 and base-b4r1cv.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1
+NEXTPNR_PLACER_LUT_ROOM=0.5

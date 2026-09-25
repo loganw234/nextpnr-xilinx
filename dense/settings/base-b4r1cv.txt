@@ -1,0 +1,9 @@
+# The default router prices on p-b4r1cv-sd: the derated 4 bands with
+# NEXTPNR_PLACER_CELL_VALID, the first placement the arch's post-placement
+# repair left alone (0 clusters moved, against 48,080 for p-b4r1-sd):
+# wirelength -4.3%, RUDY-V above 100 -12.9%, horizontal demand -57%, row
+# bands' mean peak +3.8%. Route with --expect-placement at p-b4r1cv-sd;
+# compare with base-b4r1.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1

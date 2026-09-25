@@ -1,0 +1,6 @@
+# p-bands4-rudy1-cv with NEXTPNR_PACK_CARRY_SHARED_S: the carry switch
+# measured where the repair no longer moves a fifth of the placement.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1
+NEXTPNR_PACK_CARRY_SHARED_S=1
