@@ -795,3 +795,41 @@ overuse that remains after the bands; a LUT-per-slice cap would be, if
 the default prices stall there. `altw-grow15` and `altw-bands4-long`
 were stopped at 16:00, their questions answered (the rising price
 helps; the plateau was measured), to make room.
+
+## 2026-09-24 - the tail: the rising price helps alt-weights on the bands; bands weighed by pins are worse
+
+As of 18:33:
+
+| route | placement | latest iterations |
+|---|---|---|
+| base-bands4-long (default prices) | 4 bands | 6: 13,192, 7: 12,052, 8: 11,127, 9: 10,469 |
+| base-bandsA8 (default prices) | 8 bands | 5: 15,996, 6: 14,249, 7: 12,922, then stopped |
+| altw-bandsA8 (alt-weights) | 8 bands | 11,008 / 6,937 / 6,869 / 6,661, then stopped |
+| altwg-bandsA8 (alt-weights, price x1.5) | 8 bands | 11,008 / **5,849** / **5,582** |
+
+- Every banded curve is now in its tail, a few percent an iteration.
+- The rising price keeps alt-weights 16-19% below its fixed-price twin
+  at each iteration, and is the lowest curve yet at iteration 3.
+- After eight iterations of the default prices, 78% of the overuse
+  (11,127) lies in grid rows 175 to 249, the heart of the 4-band
+  placement's band 1, and most of it in some 70 columns. It is on short
+  wires, and the fp256 lane's datapath nets top the list.
+
+**Bands weighed by pins: worse.** b41d99f adds WEIGH=pins to bands.py,
+so that a band of many-pin cells is given fewer of them. Aligned 8
+bands, three seeds, RUDY vertical above 100: 182,520 / 99,867 / 210,704
+against 103,292 / 114,503 / 132,851 weighed by cells. The peak row band
+was 12,322 to 14,932 against 10,555 to 11,279. The partition paid for
+the balance: the rows 175-250 split cut 10,552 nets against 5,535. Not
+routed.
+
+**Stopped at 18:42:** base-bandsA8 (8 bands route a few percent behind 4)
+and altw-bandsA8 (its plateau measured, and its rising-price twin
+better). **Launched in their place**, both on the unaligned 4-band
+placement with the default prices, each differing from base-bands4-long
+in one setting (4ff8546, f758d8a binary, cap 20):
+
+- `bbm8-bands4`: bounding-box margin 8 tiles instead of 3, so a net can
+  detour around the dense patch;
+- `grow15-bands4`: the price multiplied by 1.5 before each iteration's
+  +2.
