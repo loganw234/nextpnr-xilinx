@@ -1245,6 +1245,7 @@ void Arch::fixupPlacement()
     // pin-merge fixup below (which assumes a legal placement) runs.
     {
         int gw = chip_info->width, gh = chip_info->height;
+        int stranded_5lut = 0, stranded_mem = 0, stranded_other = 0; // [dense] counted for the log
         // Collect stranded cluster roots / standalone cells (a LUT+FF pair has
         // the LUT as root and the FF as a constr_z child; the placer can leave
         // the LUT6 root on a 5LUT).  A cell is a root here if it has no parent.
@@ -1272,12 +1273,20 @@ void Arch::fixupPlacement()
                 }
             if (has_carry)
                 continue;
-            bool invalid = false;
+            bool invalid = false, on_5lut = false, mem_out = false;
             for (auto m : tree)
-                if (m->bel != BelId() && !isValidBelForCell(m, m->bel))
+                if (m->bel != BelId() && !isValidBelForCell(m, m->bel)) {
                     invalid = true;
-            if (invalid)
+                    // [dense] why, for the log below
+                    if (m->type == id_SLICE_LUTX && getBelPinWire(m->bel, id_A6) == WireId())
+                        on_5lut = true;
+                    else if (m->type == id_SLICE_LUTX && (m->lutInfo.is_memory || m->lutInfo.is_srl))
+                        mem_out = true;
+                }
+            if (invalid) {
                 roots.push_back(ci);
+                (on_5lut ? stranded_5lut : mem_out ? stranded_mem : stranded_other)++;
+            }
         }
         int fixed = 0;
         for (CellInfo *root : roots) {
@@ -1365,6 +1374,12 @@ void Arch::fixupPlacement()
         }
         if (fixed)
             log_info("post-place repair: relocated %d stranded cluster(s)/cell(s) to valid bels\n", fixed);
+        // [dense] what was stranded: the placer's own legaliser asks only the
+        // tile check (NEXTPNR_PLACER_CELL_VALID, placer_heap.h)
+        if (!roots.empty())
+            log_info("post-place repair: of %d stranded, %d held a LUT on a 5LUT bel, %d an SRL or RAM LUT outside a "
+                     "SLICEM, %d something else\n",
+                     int(roots.size()), stranded_5lut, stranded_mem, stranded_other);
     }
     for (auto &ts : tileStatus) {
         if (ts.lts == nullptr)

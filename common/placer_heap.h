@@ -114,6 +114,19 @@ struct PlacerHeapCfg
     // the room. 1 (the default) is upstream. NEXTPNR_PLACER_LUT_ROOM.
     float lut_room = 1;
 
+    // [dense] The strict legaliser also asks isValidBelForCell of every
+    // candidate bel - of each member of a cluster that holds no carry chain
+    // - as placer1's refinement then does of its swaps (placer1.cc). The
+    // legaliser asks only the tile check, isBelLocationValid, which lets a
+    // LUT whose output is still named O6 sit on a 5LUT bel (the exemption
+    // a carry's DI feed needs). The arch's post-placement repair asks
+    // isValidBelForCell, finds such LUTs stranded, and moves each to the
+    // nearest free valid bel. On cft-fp256's board netlist it moved about
+    // 48,000 clusters, a fifth of the design, after the placer had finished
+    // (dense/LEDGER.md, 2026-09-25). false (the default) is upstream.
+    // NEXTPNR_PLACER_CELL_VALID=1.
+    bool cell_valid = false;
+
     // These cell types will be randomly locked to prevent singular matrices
     std::unordered_set<IdString> ioBufTypes;
     // These cell types are part of the same unit (e.g. slices split into

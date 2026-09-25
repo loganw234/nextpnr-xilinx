@@ -836,6 +836,26 @@ class HeAPPlacer
     // where the last legal placement's routing demand is high (placer_heap.h
     // says how). Empty: no derating.
     std::vector<std::vector<float>> derate;
+    // [dense] NEXTPNR_PLACER_CELL_VALID: whether a cluster's tree holds a
+    // CARRY4 (its members are then left to the tile check, as the arch's
+    // post-placement repair leaves carry trees alone). Memoised by root.
+    std::unordered_map<IdString, bool> carry_tree;
+    bool cluster_has_carry(CellInfo *root)
+    {
+        auto it = carry_tree.find(root->name);
+        if (it != carry_tree.end())
+            return it->second;
+        std::vector<CellInfo *> tree{root};
+        bool has = false;
+        for (size_t i = 0; i < tree.size() && !has; i++) {
+            if (tree[i]->type == ctx->id("CARRY4"))
+                has = true;
+            for (auto c : tree[i]->constr_children)
+                tree.push_back(c);
+        }
+        return carry_tree[root->name] = has;
+    }
+
     // [dense] NEXTPNR_PLACER_HEAT: the derating from an earlier route's
     // heatmap, fixed for the run (placer_heap.h says how). Empty: none.
     std::vector<std::vector<float>> heat_derate;
@@ -1685,6 +1705,9 @@ class HeAPPlacer
                     for (auto sz : fb.at(nx).at(ny)) {
                         if (ci->region != nullptr && ci->region->constr_bels && !ci->region->bels.count(sz))
                             continue;
+                        // [dense] NEXTPNR_PLACER_CELL_VALID (placer_heap.h)
+                        if (cfg.cell_valid && !ctx->isValidBelForCell(ci, sz))
+                            continue;
                         if (ctx->checkBelAvail(sz) || (radius > ripup_radius || ctx->rng(20000) < 10)) {
                             CellInfo *bound = ctx->getBoundBelCell(sz);
                             if (bound != nullptr) {
@@ -1751,6 +1774,11 @@ class HeAPPlacer
                         }
                     }
                 } else {
+                    // [dense] NEXTPNR_PLACER_CELL_VALID: every member of a
+                    // cluster without a carry chain; a carry's DI feeds sit on
+                    // 5LUT bels still named O6 until fixupPlacement, as the
+                    // arch's own repair allows by leaving carry trees alone
+                    const bool check_members = cfg.cell_valid && !cluster_has_carry(ci);
                     for (auto sz : fb.at(nx).at(ny)) {
                         Loc loc = ctx->getBelLocation(sz);
                         if (ci->constr_abs_z && loc.z != ci->constr_z)
@@ -1781,6 +1809,8 @@ class HeAPPlacer
                                 goto fail;
                             CellInfo *bound;
                             if (target == BelId() || ctx->getBelType(target) != vc->type)
+                                goto fail;
+                            if (check_members && !ctx->isValidBelForCell(vc, target))
                                 goto fail;
                             bound = ctx->getBoundBelCell(target);
                             // Chains cannot overlap
@@ -2612,6 +2642,11 @@ PlacerHeapCfg::PlacerHeapCfg(Context *ctx)
     heat_pct = float(env_float("NEXTPNR_PLACER_HEAT_PCT", 1, 99.9, 99));
     heat_min = float(env_float("NEXTPNR_PLACER_HEAT_MIN", 0.1, 1, 0.5));
     lut_room = float(env_float("NEXTPNR_PLACER_LUT_ROOM", 0.1, 1, 1));
+    if (const char *e = getenv("NEXTPNR_PLACER_CELL_VALID")) {
+        if (std::string(e) != "1")
+            log_error("NEXTPNR_PLACER_CELL_VALID='%s' is not 1\n", e);
+        cell_valid = true;
+    }
     if (const char *e = getenv("NEXTPNR_PLACER_BLOCK_WEIGHT")) {
         char *end = nullptr;
         double v = strtod(e, &end);

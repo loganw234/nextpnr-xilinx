@@ -59,6 +59,15 @@ template <> struct hash<std::pair<NEXTPNR_NAMESPACE_PREFIX IdString, std::size_t
 
 NEXTPNR_NAMESPACE_BEGIN
 
+// [dense] NEXTPNR_PLACER_CELL_VALID=1 (placer_heap.h): swaps also ask
+// isValidBelForCell. Read once; a malformed value is refused by name when
+// HeAP's configuration is read.
+static bool dense_cell_valid()
+{
+    static const bool v = getenv("NEXTPNR_PLACER_CELL_VALID") != nullptr;
+    return v;
+}
+
 class SAPlacer
 {
   private:
@@ -611,6 +620,12 @@ class SAPlacer
             (is_constrained(other_cell) || other_cell->belStrength > STRENGTH_WEAK)) {
             return false;
         }
+        // [dense] NEXTPNR_PLACER_CELL_VALID (placer_heap.h): an unconstrained
+        // cell, and the one it trades places with, must suit their new bels
+        if (dense_cell_valid() &&
+            ((!is_constrained(cell) && !ctx->isValidBelForCell(cell, newBel)) ||
+             (other_cell != nullptr && !is_constrained(other_cell) && !ctx->isValidBelForCell(other_cell, oldBel))))
+            return false;
         int old_dist = get_constraints_distance(ctx, cell);
         int new_dist;
         if (other_cell != nullptr)
@@ -745,6 +760,13 @@ class SAPlacer
         NPNR_ASSERT(newBaseLoc.z == baseLoc.z);
         for (const auto &cr : cell_rel)
             cells.insert(cr.first->name);
+        // [dense] NEXTPNR_PLACER_CELL_VALID: every member of a cluster that
+        // holds no carry chain (a carry's DI feeds sit on 5LUT bels still
+        // named O6 until fixupPlacement)
+        bool check_members = dense_cell_valid();
+        for (const auto &cr : cell_rel)
+            if (cr.first->type == ctx->id("CARRY4"))
+                check_members = false;
 
         for (const auto &cr : cell_rel) {
             Loc targetLoc = {newBaseLoc.x + cr.second.x, newBaseLoc.y + cr.second.y, cr.second.z};
@@ -752,6 +774,8 @@ class SAPlacer
             if (targetBel == BelId())
                 return false;
             if (ctx->getBelType(targetBel) != cell->type)
+                return false;
+            if (check_members && !ctx->isValidBelForCell(cr.first, targetBel))
                 return false;
             CellInfo *bound = ctx->getBoundBelCell(targetBel);
             // We don't consider swapping chains with other chains, at least for the time being - unless it is
@@ -782,6 +806,10 @@ class SAPlacer
                 goto swap_fail;
             CellInfo *bound = ctx->getBoundBelCell(mm.second);
             if (bound && (!check_cell_bel_region(bound, bound->bel) || bel_excluded(bound, bound->bel)))
+                goto swap_fail;
+            // [dense] NEXTPNR_PLACER_CELL_VALID: a cell the chain displaced
+            // must suit the bel it was moved to
+            if (bound && dense_cell_valid() && !is_constrained(bound) && !ctx->isValidBelForCell(bound, mm.second))
                 goto swap_fail;
         }
         compute_cost_changes(moveChange);
