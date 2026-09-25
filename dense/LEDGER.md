@@ -1035,3 +1035,193 @@ was launched, and relaunched without the option.
 Load at 06:00: five routes (base-bands4-long, base-b4r1, hist2-b4r1,
 altw-b4r1, base-b4r2s2), load average 7-8 of 36 threads, 23 of 46 GB
 available. The 3285910 build and the three placements run beside them.
+
+## 2026-09-25 - the logic packed as Vivado packs it: 13% fewer physical LUTs, every LUT of an FMA lane checked, but the placer packs tighter rather than spreading; the heat placement leads by 12.5% at iteration 3
+
+**The goal, restated by Logan** (2026-09-25): "Ideally, as the design does
+route through Vivado, I'd like to get it to route with open tools without
+a design change". No change to the RTL, then. Every lever is the tools':
+synthesis, packing, placement and routing.
+
+**Where the open flow starts behind.** For the board configuration of
+6a2b26c on the 325T, Vivado reports 108,531 LUTs (cft-fp256
+docs/VALIDATION.md, 2026-09-23). The bench netlist (Yosys 0.69,
+`synth_xilinx -flatten -abc9`) holds 115,587 LUTs and 5,893 SRL16Es. Its
+placement p-b4r1-sd fills 136,593 6LUT bels - physical LUTs - by
+`dense/lut_census.py`:
+
+| bel | netlist LUTs and SRLs | feed-throughs the packer made | constants | distributed RAM |
+|---|---|---|---|---|
+| 6LUT (136,593) | 123,129 | 11,633 | 1,427 | 404 |
+| 5LUT (23,668) | 1,683 | 13,635 | 8,290 | 60 |
+
+- The 5LUT bels in use are four to each of 5,917 carry slices: the
+  chains' DI feeds. No two general LUTs share a physical LUT, where
+  Vivado pairs them routinely (a LUT6_2: O6 and O5 of the same five
+  inputs).
+- Every one of the 11,633 feed-throughs in 6LUT bels relays a signal to a
+  CARRY4's S input.
+- Of the netlist's 23,608 S inputs, 7,524 come from a LUT1-5 (6,542) or
+  an inverter (982) that also has other users. The atomic carry packer
+  adopts an S-driving LUT into the slot only when S is its one user.
+- `dense/lut_pairs.py` finds 14,523 pairs a greedy match can make among
+  LUTs that share an input and together read at most five nets: 12.6%
+  fewer physical LUTs, 6.7% fewer LUT input pins.
+
+**bf27a42, two packer switches, off by default:**
+
+- `NEXTPNR_PACK_CARRY_SHARED_S`: an S-LUT with other users is adopted
+  when nothing has claimed it. Its O6 feeds S inside the slice and the
+  fabric through the position's own O6 pin.
+- `NEXTPNR_PACK_LUT_PAIRS`: after packing, pairs are constrained onto one
+  physical LUT's 6LUT and 5LUT, most shared inputs first. The 5LUT half
+  carries no other constraint and nothing on A6. fixupPlacement lays the
+  pair's nets onto shared pins, as for a carry's DI feed-through.
+
+On the bench netlist the pairing makes 14,896 pairs: 3,783 share one
+input, 7,684 two, 2,408 three, 465 four and 556 five. That is 31,015
+input pins fewer (p-b4r1lp-sd's log).
+
+**Checked before trusted: 65ee7f8.** `dense/fasm_lut_check.py` recomputes
+every LUT's INIT from the netlist's function and the nets the router put
+on its physical pins, never reading nextpnr's own mapping. It checks O5
+and O6 separately where a LUT is shared. `dense/check_pack.sh` builds one
+cft-fp256 fp64 FMA lane (cft_fpfma_pipe, EXP_W=11 MAN_W=52, rtl
+307872e) in the harness pattern (`dense/harness.py`) and routes it twice
+with bf27a42's build:
+
+| | control | both switches |
+|---|---|---|
+| physical LUTs | 6,386 | 5,225 (-18.2%) |
+| 5LUT bels in use | 1,236 | 2,185 |
+| packer | - | 218 shared S-LUTs adopted, 949 pairs |
+| overuse 0 at iteration | 2 | 3 |
+| LUT cells checked | 7,241: PASS | 7,023: PASS |
+| fasm2frames + xc7frames2bit | bitstream written | bitstream written |
+
+Every pair and adopted LUT computes its netlist function on the pins the
+router gave it. Nothing here was run on hardware.
+
+**Two false starts, one fix (0e51c74).**
+
+- The first p-b4r1cs-sd was refused at 07:40: "32962 of the 210354 cells
+  ... are not in this design". The band file names the packed design's
+  cells. The packer names the cells it makes from a running counter, and
+  the names shift once it makes fewer feed-throughs.
+- The first p-b4r1lp-sd (bf27a42) failed at HeAP's first legalisation at
+  07:46: "Unable to find legal placement for cell
+  '$auto$abc_ops_reintegrate.cc:611:reintegrate$5610404'". The band file
+  puts each cell in a band by name, and a pair's halves had been given
+  different bands: an unplaceable cluster.
+- 0e51c74 counts counter-made names apart and gives every chain member
+  its root's band. Moved:
+  - p-b4r1lp-sd: 876 pair halves;
+  - p-b4r1cs-sd: 1,561 chain members, 32,890 counter-made names set
+    aside;
+  - p-b4r1cslp-sd: 2,074 members.
+- **The regression:** p-b4r1-sd placed again with 0e51c74 is IDENTICAL
+  to p-b4r1-sd, all 34 wirelength lines. With a file's own packing the
+  new rules change nothing.
+
+**The switches on the bench netlist** (0e51c74, the derated 4 bands, the
+default seed; census by `dense/lut_census.py`):
+
+| placement | physical LUTs | 5LUT bels | slices used | nets | wirelength | row bands' mean peak | RUDY-V above 100 / 99.9% / max |
+|---|---|---|---|---|---|---|---|
+| p-b4r1-sd | 136,593 | 23,668 | 43,289 | 236,776 | 7,809,287 | 11,378 | 101,601 / 171 / 195 |
+| p-b4r1cs-sd (carry) | 132,017 | 23,668 | 41,364 | 232,200 | 7,591,074 | 11,480 | 113,104 / 274 / 308 |
+| p-b4r1lp-sd (pairs) | 121,697 | 38,564 | 40,329 | 236,776 | 7,739,840 | 11,697 | 141,149 / 199 / 248 |
+| p-b4r1cslp-sd (both) | 118,827 | 36,858 | 39,254 | 232,200 | 8,209,143 | 12,852 | 147,478 / 190 / 214 |
+
+The carry switch adopted 4,574 of the 7,524 candidate S-LUTs. The rest
+failed the five-input limit with the DI feed, or another cluster already
+held them. With both switches, pairing made 13,190 pairs.
+
+- **The switches cut the logic.** The two together remove 13.0% of the
+  physical LUTs.
+- **The placer spends the room on packing tighter, not on spreading.**
+  The densest band rises from 4.47 LUTs a used slice to 5.28 with both.
+- **Why:** HeAP's spreader still counts a CLB tile's 16 LUT bels as its
+  room. A pair fills two of them in one site, and the legaliser no longer
+  has to spread the extra.
+- **What the metrics say:** crossings and RUDY rise, most for both
+  switches together. They have misranked placements before, so the
+  routes decide (below).
+
+**Synthesis options** on the same fp64 lane (Yosys 0.69, `synth_xilinx
+-flatten -abc9 ...`, cft-fp256 307872e):
+
+| option | LUTs | CARRY4 | FDRE | SRL16E | MUXF7 / F8 |
+|---|---|---|---|---|---|
+| (none, as the bench) | 5,414 | 309 | 3,036 | 362 | 2 / 1 |
+| `-widemux 5` | 5,520 (+2.0%) | 317 | 3,029 | 362 | 247 / 142 |
+| `-dff` | 5,132 (-5.2%) | 279 | 2,990 | 305 | 1 / 0 |
+| `scratchpad -set abc9.D 100000` | 5,354 (-1.1%) | 309 | 3,036 | 362 | 0 / 0 |
+
+`-dff` passes the flip-flops to ABC9, which merges registers it proves
+equivalent. Vivado's synthesis removes equivalent registers by default.
+The bench netlist is being synthesised again with `-dff`
+(`~/dense-bench/netlists/20260925-board-6a2b26c-dff`, PROVENANCE there).
+With the relaxed delay target as well, the lane takes 5,126 LUTs, six
+fewer than with `-dff` alone.
+
+**The heat placement's route** (base-b4r1h5, 8b32c58; its placement
+IDENTICAL to p-b4r1h5-sd, 29 lines):
+
+| iteration | plain | derated (base-b4r1) | derated + heat (base-b4r1h5) |
+|---|---|---|---|
+| 1 | 301,534 | 308,437 | 296,854 (-3.8%) |
+| 2 | 61,437 | 60,087 | 56,344 (-6.2%) |
+| 3 | 26,839 | 24,770 | 21,662 (-12.5%) |
+
+Its row bands' mean peak was the lowest measured (10,688), and the row
+crossings are the one metric that has ordered iteration 2 right.
+
+**The heat at other seeds** (round 18) is mixed:
+
+| seed | demand where base-b4r1 failed | RUDY-V above 100 | row bands' mean peak |
+|---|---|---|---|
+| default, without / with heat | 85.8 / 81.1 | 101,601 / 73,094 | 11,378 / 10,688 |
+| 2 | 86.2 / 75.8 | 158,143 / 117,111 | 13,366 / 12,375 |
+| 3 | 88.2 / 99.9 | 160,180 / 177,439 | 12,025 / 12,386 |
+
+Two seeds improve on every measure and one gets worse on every measure.
+A heatmap taken from one placement's route guides placements that
+resemble it.
+
+**Half the LUT room everywhere** (round 19, 3285910, the RUDY knob from
+the 1st percentile; floors 0.5 and 0.6, so 8 and 9 of 16 LUT bels):
+
+| placement | wirelength | row bands' mean peak | RUDY-V above 100 / 99.9% / max | demand where base-b4r1 failed |
+|---|---|---|---|---|
+| p-b4r1-sd | 7,809,287 | 11,378 | 101,601 / 171 / 195 | 85.8 |
+| p-b4c50-sd (8 of 16) | 7,403,124 | 11,443 | 127,887 / 255 / 312 | 86.2 |
+| p-b4c60-sd (9 of 16) | 7,797,145 | 11,657 | 80,964 / 185 / 234 | 80.5 |
+
+p-b4c50-sd has 5.2% less wirelength. HeAP ran 27 analytic iterations
+for it, 12 for p-b4c60-sd and 16 for p-b4r1-sd. The metrics are mixed again.
+
+**The other routes:**
+
+- base-b4r1 is at 6,915 at iteration 14, 15.9% under the plain route's
+  8,227.
+- The plain route is at 5,355 at iteration 30.
+
+**Stopped by decision:**
+
+- 07:38, base-b4r2s2: +2.2 / +19.2 / +54.8 / +77.0% at iterations 1-4.
+  The placement its RUDY metrics ranked best routes worst.
+- 08:46, hist2-b4r1: 27.4 / 27.9 / 26.9 / 24.0 / 22.8% over base-b4r1
+  at iterations 2-6, closing about a point an iteration.
+- 08:46, altw-b4r1: 9,149 / 5,494 / 5,264 / 5,216 / 5,106 / 5,091 at
+  iterations 1-6. That is the plateau it reached on the plain placement,
+  7% lower.
+
+**Launched** (f73e149, the 0e51c74 binary, default prices, cap 20, each
+checked against its placement):
+
+- base-b4r1cs: the carry switch;
+- base-b4r1lp: the pairs;
+- base-b4c50: half the LUT room.
+
+The bench netlist's `-dff` synthesis began at 08:09.
