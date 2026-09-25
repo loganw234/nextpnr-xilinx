@@ -1,0 +1,7 @@
+# p-bands4-rudy1-heat5 derating harder: capacity scaled by up to 0.8, no
+# lower than 0.3 (against 0.5 and 0.5).
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_HEAT=/bench/heat/20260925-b4r1-i10/heat.csv
+NEXTPNR_PLACER_HEAT_STRENGTH=0.8
+NEXTPNR_PLACER_HEAT_MIN=0.3

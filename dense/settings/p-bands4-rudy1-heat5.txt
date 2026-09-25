@@ -1,0 +1,10 @@
+# The derated 4 bands (p-bands4-rudy1: RUDY strength 1) with the derating
+# from where that placement's route failed: base-b4r1's overuse at
+# iteration 10 (8,521), frozen in /bench/heat/20260925-b4r1-i10 with its
+# PROVENANCE. At that iteration half of the overuse stood in tiles below
+# RUDY's 90th percentile, which the RUDY derating never touches. Summed
+# over 7x7 tiles, capacity scaled by up to 0.5 (the defaults). For
+# dense/place.sh at the default seed; compare with p-b4r1-sd.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_HEAT=/bench/heat/20260925-b4r1-i10/heat.csv
