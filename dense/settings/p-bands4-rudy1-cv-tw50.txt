@@ -1,0 +1,9 @@
+# p-bands4-rudy1-cv with HeAP's timing weight at 50 (placerHeap/timingWeight,
+# 10 by default; the xilinx arch fixes the criticality exponent at 7, so a
+# net's weight is 1 + 50 x crit^7). p-b4r1cv-cp's critical path is 20 LUT
+# levels, 52.2 ns, 48.4 of it routing across the bands. For dense/place.sh;
+# its estimated Fmax and critical path against p-b4r1cv-cp's.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_CELL_VALID=1
+placerHeap/timingWeight=50
