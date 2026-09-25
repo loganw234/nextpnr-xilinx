@@ -86,9 +86,13 @@ summary says so; compare its curve with that in mind.
 | `NEXTPNR_PLACER_RUDY` (`_PCT`, `_MIN`, `_FROM`) | before each analytic iteration, the last legal placement's routing demand per tile (RUDY); a tile above the PCT-th percentile (90) has its LUT and FF capacity scaled by (reference / demand) ^ strength, no lower than MIN (0.5), and the spreader moves cells out | only when above 0 |
 | `NEXTPNR_PLACER_HEAT` (`_STRENGTH`, `_RADIUS`, `_PCT`, `_MIN`) | the same derating from an earlier route's heatmap (`heat_iterN_by_xy.csv`): the overuse summed over a square of 2 x RADIUS + 1 tiles (3), capacity scaled by 1 - STRENGTH (0.5) x min(1, sum / the PCT-th percentile (99)), no lower than MIN (0.5); fixed for the run, and with RUDY a tile takes the lower of the two | only when set |
 
+| `NEXTPNR_PACK_CARRY_SHARED_S=1` | the LUT driving a carry's S input is packed into the carry's slot even when it has other users - they are reached through the position's own O6 pin - provided nothing else has claimed it; upstream packs only a LUT whose one user is S, and relays any other through a feed-through LUT in the slot. The atomic CARRY4 packer (the default) only | only when set |
+| `NEXTPNR_PACK_LUT_PAIRS=1` (`_FANOUT`) | after packing, two LUTs that share an input net and together read at most five nets are constrained onto one physical LUT's 6LUT and 5LUT (a LUT6_2), most shared inputs first, found through nets of at most FANOUT users (16). The 5LUT half carries no other constraint and nothing on A6; the 6LUT half may hold the FF it drives. The pair's inputs are laid onto shared pins after placement, as for a carry's DI feed-through | only when set |
+
 `dense/heatcmp.py` compares two routes' heatmaps by row band, column band
 and wire type, and `dense/heat_vs_placement.py` asks which placement
 quantity - cells, LUTs, pins, RUDY - stands where a route's overuse is.
+`dense/lut_pairs.py` counts, from a Yosys netlist, the LUTs that could pair.
 
 Placements are judged before they are routed: `dense/place.sh --name NAME
 --binary BUILD_DIR --settings FILE` places the bench netlist once and

@@ -131,6 +131,23 @@ void XC7Packer::pack_carries_atomic()
         ctx->id("FDRE"), ctx->id("FDSE"), ctx->id("FDCE"), ctx->id("FDPE"),
         ctx->id("FDRSE")};
 
+    // [dense] NEXTPNR_PACK_CARRY_SHARED_S: also adopt an S-driving LUT1-5
+    // that has users besides this S input, as long as nothing has claimed it
+    // yet (no chain, no MUXF tree, no BEL). Its O6 then feeds the carry
+    // inside the slice and its other users through the position's own O6
+    // output pin, which the carry does not use - the arrangement the adopted
+    // imported LUTs below already rely on. Unset (upstream), such a LUT stays
+    // where the placer puts it and a feed-through LUT in this slot relays it
+    // to S. On cft-fp256's board netlist 7,524 carry S inputs came from a
+    // LUT1-5 or an inverter with other users, and its placement held 11,633
+    // feed-throughs to S (dense/LEDGER.md, 2026-09-25).
+    const bool shared_s = getenv("NEXTPNR_PACK_CARRY_SHARED_S") != nullptr;
+    int shared_s_adopted = 0;
+    auto unclaimed = [&](const CellInfo *c) {
+        return c->constr_parent == nullptr && c->constr_children.empty() && !c->constr_abs_z &&
+               !c->attrs.count(ctx->id("BEL"));
+    };
+
     // Find chain roots: a CARRY4 whose CI input is not driven by another
     // CARRY4's CO[3] output.
     std::vector<CellInfo *> roots;
@@ -286,8 +303,11 @@ void XC7Packer::pack_carries_atomic()
                 // slot's 6LUT, where O6 legally feeds the carry S AND the
                 // fabric simultaneously.  Creating a feed-through here
                 // would collide with the pinned cell.
+                const bool s_shared_ok = shared_s && c4_s && c4_s->driver.cell != nullptr &&
+                                         lut_types.count(c4_s->driver.cell->type) && c4_s->users.size() > 1 &&
+                                         unclaimed(c4_s->driver.cell);
                 if (c4_s && c4_s->driver.cell != nullptr &&
-                    ((lut_types.count(c4_s->driver.cell->type) && c4_s->users.size() == 1) ||
+                    ((lut_types.count(c4_s->driver.cell->type) && c4_s->users.size() == 1) || s_shared_ok ||
                      // pinned import: any LUT1-6 Vivado placed at this slot
                      ((lut_types.count(c4_s->driver.cell->type) || c4_s->driver.cell->type == ctx->id("LUT6")) &&
                       c4_s->driver.cell->attrs.count(ctx->id("BEL"))))) {
@@ -458,6 +478,8 @@ void XC7Packer::pack_carries_atomic()
                 // Leave a pinned child's z UNCONSTR (its BEL binds it); only
                 // impose abs-z on nextpnr-inserted (un-pinned) feed-throughs.
                 if (s_lut) {
+                    if (s_shared_ok && s_lut == c4_s->driver.cell)
+                        ++shared_s_adopted;
                     anchor->constr_children.push_back(s_lut);
                     s_lut->constr_parent = anchor;
                     s_lut->constr_x = 0;
@@ -620,6 +642,9 @@ void XC7Packer::pack_carries_atomic()
     }
     log_info("   Packed %d CARRY4 cells into %d chains (atomic).\n",
              cell_count, chain_count);
+    if (shared_s)
+        log_info("   NEXTPNR_PACK_CARRY_SHARED_S: %d S-driving LUTs with other users adopted into their carry slot.\n",
+                 shared_s_adopted);
 
     // (CARRY4 DI=GND is omitted at the per-bit handling below: the DI mux defaults
     // to 0 when left unrouted, so no GND route/LUT is needed -- matches golden.)

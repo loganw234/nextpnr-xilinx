@@ -122,6 +122,9 @@ struct XilinxPacker
     void pack_luts(const std::vector<std::pair<IdString, IdString>> &lut6_2_pairs);
     void pack_ffs();
     void pack_lutffs();
+    // [dense] NEXTPNR_PACK_LUT_PAIRS: two LUTs that share an input net and
+    // together read at most five nets share one physical LUT (pack.cc)
+    void pair_luts();
 
     bool is_constrained(const CellInfo *cell);
     void pack_muxfs();

@@ -532,6 +532,172 @@ void XilinxPacker::pack_lutffs()
     log_info("Constrained %d LUTFF pairs.\n", pairs);
 }
 
+// [dense] NEXTPNR_PACK_LUT_PAIRS=1: pair LUTs into the 6LUT and 5LUT of one
+// physical LUT (a LUT6_2: O6 and O5 of the same five inputs), as Vivado
+// packs them. nextpnr's placer never does: it can put a LUT on a 5LUT bel
+// only beside a 6LUT whose inputs cover the rest, which two cells placed one
+// at a time almost never are - on cft-fp256's board netlist the 5LUT bels
+// in use were four to each carry slice, 23,668 = 4 x 5,917, the chains' DI
+// feeds (dense/LEDGER.md, 2026-09-25).
+//
+// A pair is two LUTs of at most five inputs each (no net read twice by one
+// LUT) that share at least one input net and together read at most five.
+// Candidates are found through input nets of at most
+// NEXTPNR_PACK_LUT_PAIRS_FANOUT readers (16), and taken most shared inputs
+// first, then fewest nets, then by name, so the result is deterministic.
+// The 5LUT half must carry no constraint at all and leave A6 unconnected;
+// the 6LUT half may already hold the FF it drives (pack_lutffs) and nothing
+// else. SRL and RAM LUTs,
+// BEL-pinned cells, and cells in carry chains or MUXF trees are left alone.
+// The pair is constrained exactly as constrain_lut6_2_pairs() constrains a
+// netlist LUT6_2's halves; fixupPlacement() then lays the pair's nets onto
+// shared A1..A5, rewrites X_ORIG_PORT for the INIT, and ties A6 high, as it
+// does for a carry's DI feed-through. Unset, nothing changes.
+void XilinxPacker::pair_luts()
+{
+    const char *on = getenv("NEXTPNR_PACK_LUT_PAIRS");
+    if (on == nullptr)
+        return;
+    if (std::string(on) != "1")
+        log_error("NEXTPNR_PACK_LUT_PAIRS='%s' is not 1\n", on);
+    int cap = 16;
+    if (const char *e = getenv("NEXTPNR_PACK_LUT_PAIRS_FANOUT")) {
+        char *end = nullptr;
+        long v = strtol(e, &end, 10);
+        if (*e == '\0' || *end != '\0' || v < 2 || v > 1000)
+            log_error("NEXTPNR_PACK_LUT_PAIRS_FANOUT='%s' is not a whole number from 2 to 1000\n", e);
+        cap = int(v);
+    }
+    static const IdString a_ports[6] = {id_A1, id_A2, id_A3, id_A4, id_A5, id_A6};
+    struct Cand
+    {
+        CellInfo *cell;
+        std::vector<IdString> ins; // distinct input nets, sorted
+        bool can_be_5lut;          // no constraint at all
+    };
+    std::vector<Cand> cands;
+    int with_ff = 0;
+    for (auto cell : sorted(ctx->cells)) {
+        CellInfo *ci = cell.second;
+        if (ci->type != id_SLICE_LUTX || ci->attrs.count(ctx->id("BEL")) || ci->attrs.count(ctx->id("X_LUT_AS_SRL")) ||
+            ci->attrs.count(ctx->id("X_LUT_AS_DRAM")))
+            continue;
+        if (ci->constr_parent != nullptr || ci->constr_abs_z || is_constrained(ci))
+            continue;
+        bool children_ok = true;
+        for (auto child : ci->constr_children)
+            if (child->type != id_SLICE_FFX || child->constr_z != (BEL_FF - BEL_6LUT))
+                children_ok = false;
+        if (!children_ok)
+            continue;
+        // only A1..A6 in and O6 out may be connected
+        bool ports_ok = true;
+        std::vector<IdString> ins;
+        int nin = 0;
+        for (auto &port : ci->ports) {
+            if (port.second.net == nullptr)
+                continue;
+            if (port.first == id_O6)
+                continue;
+            bool is_a = false;
+            for (auto a : a_ports)
+                if (port.first == a)
+                    is_a = true;
+            if (!is_a) {
+                ports_ok = false;
+                break;
+            }
+            ins.push_back(port.second.net->name);
+            nin++;
+        }
+        if (!ports_ok || get_net_or_empty(ci, id_O6) == nullptr || nin == 0 || nin > 5)
+            continue;
+        std::sort(ins.begin(), ins.end());
+        if (std::adjacent_find(ins.begin(), ins.end()) != ins.end())
+            continue; // a net on two of its inputs
+        if (!ci->constr_children.empty())
+            with_ff++;
+        // a 5LUT bel has no A6: a cell reading A6, even a constant there, can
+        // only be the 6LUT half
+        cands.push_back({ci, ins, ci->constr_children.empty() && get_net_or_empty(ci, id_A6) == nullptr});
+    }
+    // readers of each net among the candidates
+    std::unordered_map<IdString, std::vector<int>> readers;
+    for (int i = 0; i < int(cands.size()); i++)
+        for (auto n : cands[i].ins)
+            readers[n].push_back(i);
+    struct Pair
+    {
+        int shared, nets, a, b;
+    };
+    std::vector<Pair> pairs;
+    std::unordered_set<uint64_t> seen;
+    for (auto &r : readers) {
+        NetInfo *ni = ctx->nets.at(r.first).get();
+        if (int(ni->users.size()) > cap || r.second.size() < 2)
+            continue;
+        const auto &rs = r.second;
+        for (size_t x = 0; x < rs.size(); x++)
+            for (size_t y = x + 1; y < rs.size(); y++) {
+                int a = std::min(rs[x], rs[y]), b = std::max(rs[x], rs[y]);
+                if (!cands[a].can_be_5lut && !cands[b].can_be_5lut)
+                    continue;
+                uint64_t key = (uint64_t(a) << 32) | uint64_t(b);
+                if (!seen.insert(key).second)
+                    continue;
+                std::vector<IdString> u;
+                std::set_union(cands[a].ins.begin(), cands[a].ins.end(), cands[b].ins.begin(), cands[b].ins.end(),
+                               std::back_inserter(u));
+                if (u.size() > 5)
+                    continue;
+                int shared = int(cands[a].ins.size() + cands[b].ins.size() - u.size());
+                pairs.push_back({shared, int(u.size()), a, b});
+            }
+    }
+    std::sort(pairs.begin(), pairs.end(), [](const Pair &p, const Pair &q) {
+        if (p.shared != q.shared)
+            return p.shared > q.shared;
+        if (p.nets != q.nets)
+            return p.nets < q.nets;
+        if (p.a != q.a)
+            return p.a < q.a;
+        return p.b < q.b;
+    });
+    std::vector<bool> used(cands.size(), false);
+    int made = 0, pins = 0;
+    std::map<int, int> by_shared;
+    for (auto &p : pairs) {
+        if (used[p.a] || used[p.b])
+            continue;
+        // the 5LUT half: the one without a constraint; of two such, the one
+        // reading fewer nets, then the later name
+        int c5 = p.b, c6 = p.a;
+        if (!cands[p.b].can_be_5lut ||
+            (cands[p.a].can_be_5lut && cands[p.a].ins.size() < cands[p.b].ins.size()))
+            std::swap(c5, c6);
+        CellInfo *lut6 = cands[c6].cell, *lut5 = cands[c5].cell;
+        used[p.a] = used[p.b] = true;
+        rename_port(ctx, lut5, id_O6, id_O5);
+        lut5->attrs.erase(ctx->id("X_ORIG_PORT_O6"));
+        lut5->attrs[ctx->id("X_ORIG_PORT_O5")] = std::string("O");
+        lut6->constr_children.push_back(lut5);
+        lut5->constr_parent = lut6;
+        lut5->constr_x = 0;
+        lut5->constr_y = 0;
+        lut5->constr_abs_z = false;
+        lut5->constr_z = BEL_5LUT - BEL_6LUT;
+        made++;
+        pins += p.shared;
+        by_shared[p.shared]++;
+    }
+    std::string hist;
+    for (auto &b : by_shared)
+        hist += stringf("%s%d sharing %d", hist.empty() ? "" : ", ", b.second, b.first);
+    log_info("NEXTPNR_PACK_LUT_PAIRS: %d LUTs could pair (%d already holding their FF), %d candidate pairs through "
+             "nets of at most %d users; %d pairs made (%s), %d input pins fewer\n",
+             int(cands.size()), with_ff, int(pairs.size()), cap, made, hist.c_str(), pins);
+}
+
 bool XilinxPacker::is_constrained(const CellInfo *cell)
 {
     return cell->constr_x != cell->UNCONSTR || cell->constr_y != cell->UNCONSTR || cell->constr_z != cell->UNCONSTR;
@@ -1428,6 +1594,7 @@ bool Arch::pack()
         packer.pack_ffs();
         packer.finalise_muxfs();
         packer.pack_lutffs();
+        packer.pair_luts();
     } else {
         USPacker packer;
         packer.ctx = getCtx();
