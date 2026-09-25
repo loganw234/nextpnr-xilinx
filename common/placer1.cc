@@ -538,7 +538,9 @@ class SAPlacer
                           cell.first.c_str(ctx), ctx->getBelName(cell.second->bel).c_str(ctx), cl.z,
                           cell.second->constr_z, cell.second->constr_y, cell.second->constr_x, cl.x, cl.y, cl.z);
             }
-        timing_analysis(ctx);
+        // [dense] NEXTPNR_PLACER_CRIT_PATH=1: the critical path too, not only the
+        // Fmax and the histogram (dense/place.sh sets it; logging only)
+        timing_analysis(ctx, true, true, getenv("NEXTPNR_PLACER_CRIT_PATH") != nullptr);
         ctx->unlock();
         return true;
     }

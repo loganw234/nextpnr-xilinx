@@ -114,7 +114,7 @@ set +e
 # Vivado builds beside it: if memory runs out, the kernel is to take this
 # first (2026-09-24: five placements beside four routes and a U50 build left
 # 6 GB free).
-docker run --rm --oom-score-adj 1000 --name "dense-place-$NAME-$$" -u "$(id -u):$(id -g)" ${ENVARGS[@]+"${ENVARGS[@]}"} \
+docker run --rm --oom-score-adj 1000 --name "dense-place-$NAME-$$" -u "$(id -u):$(id -g)" -e NEXTPNR_PLACER_CRIT_PATH=1 ${ENVARGS[@]+"${ENVARGS[@]}"} \
   -v "$BIN":/bindense:ro -v "$BENCH":/bench:ro -v "$OUT":/out -w /out "$IMAGE" bash -c "
     set -o pipefail
     export PATH=/bindense:\$PATH
