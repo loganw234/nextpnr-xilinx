@@ -1,0 +1,12 @@
+# The default router prices on p-b4r1h5-sd: the derated 4 bands, derated
+# again where base-b4r1 failed at iteration 10 (NEXTPNR_PLACER_HEAT, 7x7
+# tiles, up to 0.5; the heat frozen at /bench/heat/20260925-b4r1-i10). Of
+# the three heat placements it leaves the least vertical demand where
+# base-b4r1 failed (81.1 against p-b4r1-sd's 85.8, heat-weighted), and it
+# has the lowest RUDY sum above 100 (73,094 against 101,601) and row bands'
+# mean peak (10,688 against 11,378); its peak is higher (232 against 195).
+# Route with --expect-placement at p-b4r1h5-sd; compare with base-b4r1,
+# which differs only in the heat.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PLACER_HEAT=/bench/heat/20260925-b4r1-i10/heat.csv
