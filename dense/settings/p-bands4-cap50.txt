@@ -1,0 +1,12 @@
+# The 4 bands with nearly every tile's LUT and FF capacity at half: 8 of a
+# CLB tile's 16 LUT bels, which is its number of LUT6 sites (a 5LUT and a
+# 6LUT share one). HeAP's spreader counts all 16 bels as the tile's room,
+# so it stops spreading at up to twice the LUT6s a tile can hold and leaves
+# the rest to the legaliser; in the placements so far the middle bands
+# hold 4.1-4.5 LUTs a used slice, the slices full. Done with the RUDY knob:
+# from the 1st percentile at strength 10, every tile above it goes to the
+# floor (whole bels, rounded down: 16 x 0.5 = 8). For dense/place.sh.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=10
+NEXTPNR_PLACER_RUDY_PCT=1
+NEXTPNR_PLACER_RUDY_MIN=0.5

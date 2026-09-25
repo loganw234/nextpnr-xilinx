@@ -1,0 +1,6 @@
+# p-bands4-cap50 with the floor at 0.6: 9 of 16 LUT bels a tile (16 x 0.6
+# = 9.6, rounded down), a little room for 5LUT-6LUT pairs.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=10
+NEXTPNR_PLACER_RUDY_PCT=1
+NEXTPNR_PLACER_RUDY_MIN=0.6
