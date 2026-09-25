@@ -1225,3 +1225,105 @@ checked against its placement):
 - base-b4c50: half the LUT room.
 
 The bench netlist's `-dff` synthesis began at 08:09.
+
+## 2026-09-25 - the root drive filled; what was lost, what runs again; and a fifth of every placement is moved after placement
+
+**The root drive of amd-arc-box filled** at about 09:17-09:35 box time,
+and Logan moved files off it. These placements were most of the growth:
+each keeps a 350 MB placed.json. With Logan's leave ("You can move old
+files to the /data drive"), ~/dense-archive.sh moved 50 old placement
+directories (14 GB) to /data/dense-archive/placements. Each old path is
+left a symlink. The directories kept on the root drive were the ones
+the running routes compare against, and any written in the previous two
+hours. ~/dense-bench/netlists is now a symlink to
+/data/dense-archive/netlists. ~/dense-placements-to-data.sh turns
+~/dense-bench/placements into one too once no placement is running.
+
+**What the window did.** Writes that needed new blocks failed. Log lines
+landing in an already-allocated block survived:
+
+| output | damage | done |
+|---|---|---|
+| base-b4r1 | heat_iter15_by_{xy,net,type}.csv empty; every iteration line is in route.log | kept |
+| base-b4r1cs, base-b4c50 | route.log cut at 16,384 and 20,480 bytes, whole 4 KB blocks; lines lost after the placement, whose trajectory is complete and IDENTICAL | stopped 09:42-09:43, started again 09:43-09:47 |
+| base-b4r1lp | its iteration-1 heatmaps empty | stopped, started again |
+| p-b4r1lp90-sd | placed.json 0 bytes, place.log cut at 16,384 bytes, rc empty | placed again from 09:38; NOTE in the old directory |
+| p-b4r1lp95-sd | none: placed.json whole (359,862,322 bytes, parses, 210,354 cells) | kept |
+| p-b4r1cslp90-sd | none: finished at 09:38, rc 0, all 13 HeAP iterations logged | kept |
+| the `-dff` synthesis | its log stops at 09:17; its ABC step began then, from a file in the container's /tmp | stopped 09:43, synthesised again into `20260925-board-6a2b26c-dff-2`; NOTE in the first |
+| base-b4r1h5, base-bands4-long | nothing written during the window; both wrote their next iteration and heatmap whole afterwards | kept |
+
+Logan: "If any runs were likely damaged, its acceptable to stop and
+restart them to ensure the output isnt questionable".
+
+**A fifth of every placement is moved after placement.** Every placement
+log holds a line from the arch's post-placement repair
+(xilinx/arch_place.cc, fixupPlacement). The repair moves each stranded
+cluster to the nearest free valid bel, by a spiral search that knows no
+nets:
+
+| placement | clusters relocated after placement |
+|---|---|
+| p-b4r1-sd | 48,080 |
+| p-b4r1h5-sd | 48,073 |
+| p-b4c50-sd | 48,036 |
+| p-b4r1cs-sd | 45,770 |
+| p-b4r1lp-sd | 33,136 |
+| p-b4r1cslp-sd | 32,744 |
+| p-b4r1lp95-sd | 32,961 |
+| p-b4r1cslp90-sd | 32,640 |
+
+That is some 48,000 of the design's 210,354 cells not where HeAP and the
+refining annealer put them.
+
+- A cluster is stranded when a member fails isValidBelForCell. That check
+  rejects any LUT still driving O6 on a 5LUT bel, and until fixupPlacement
+  renames the pin, every LUT drives O6.
+- HeAP's strict legaliser and placer1's swaps never ask it. They ask only
+  the tile check, isBelLocationValid. Its 5LUT rule passes an O6-named
+  cell on purpose, because a carry's DI feed-through is one until
+  fixupPlacement.
+- The spreader counts all 16 LUT bels of a tile as room. So the legaliser
+  fills 5LUT bels with LUTs, and the repair evicts them afterwards.
+- Every placement measured here, and every route, was of the placement
+  after this repair.
+- With LUT pairs the count falls to about 33,000. A pair's 5LUT half
+  drives O5, which is valid, and fills its site.
+
+**55634ad: NEXTPNR_PLACER_CELL_VALID=1** makes the legaliser and the
+annealer ask the same thing:
+- HeAP's strict legaliser: every candidate bel of a single cell, and
+  every member of a cluster that holds no CARRY4;
+- placer1's position swaps: both cells, unless constrained;
+- placer1's chain swaps: the members of a cluster without a CARRY4, and
+  every cell the chain displaces.
+Carry trees are left to the tile check, as the repair leaves them alone.
+The repair's log now counts why clusters were stranded: a LUT on a 5LUT
+bel, an SRL or RAM LUT outside a SLICEM, or something else. Round 25
+(16ab8d2) places the derated 4 bands three ways: with the switch alone,
+with it and half the LUT room (8 of 16 bels, the usable count for
+unpaired LUTs), and with it, pairs and 9 of 16.
+
+**The room given back to the pairs** (round 23, 41e970a
+`NEXTPNR_PLACER_LUT_ROOM`):
+
+| placement | physical LUTs | row bands' mean peak | wirelength |
+|---|---|---|---|
+| p-b4r1lp-sd (pairs) | 121,697 | 11,697 | 7,739,840 |
+| p-b4r1lp95-sd (pairs, 15 of 16 LUT bels) | 121,697 | 12,817 | 7,689,085 |
+| p-b4r1cslp-sd (both switches) | 118,827 | 12,852 | 8,209,143 |
+| p-b4r1cslp90-sd (both, 14 of 16) | 118,827 | 12,346 | 8,242,169 |
+
+Room given back to the spreader does not reach the final placement while
+the repair moves a fifth of it. That is measured next.
+
+**The heat placement's route** (base-b4r1h5) against base-b4r1 at
+iterations 1-5:
+
+| iteration | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| base-b4r1h5 | 296,854 | 56,344 | 21,662 | 14,067 | 11,017 |
+| change | -3.8% | -6.2% | -12.5% | -15.4% | -18.4% |
+
+base-b4r1 is at 6,684 at iteration 15 (plain: 7,810). The plain route is
+at 5,233 at iteration 32.
