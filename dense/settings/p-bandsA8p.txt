@@ -1,0 +1,6 @@
+# Eight aligned min-cut bands shared by PINS, not cells (dense/bands.py at
+# the commit that adds WEIGH; bands/20260924-a8p-frozen): a band of wide
+# datapath logic is given fewer cells for its rows. After eight iterations
+# of the default prices on the 4-band placement, 78% of the overuse lay in
+# one band. For dense/place.sh; run at several seeds.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-a8p-frozen/bands.txt

@@ -25,7 +25,14 @@ Writes BANDS_FILE: a header, then "<band> <cell name>" per cell, band 0 the
 bottom. dense/bands.cc-side: NEXTPNR_DENSE_BANDS=BANDS_FILE confines each
 named cell to its band's rows (placer_heap.cc).
 
-usage: bands.py PLACED_JSON BANDS_FILE [LEVELS] [BALANCE] [PASSES]
+usage: bands.py PLACED_JSON BANDS_FILE [LEVELS] [BALANCE] [PASSES] [WEIGH]
+
+WEIGH is what a band's rows are shared by: cells (the default) or pins.
+By cells, a band of wide datapath logic - many pins a cell - is as full
+as any other and routes worse: on the unaligned 4-band placement 78% of
+the overuse left after eight iterations of the default prices lay in one
+band's rows (2026-09-24). By pins, such a band is given fewer cells for
+its rows. A vertex weighs the connected pins of its cells.
 """
 import json
 import re
@@ -37,6 +44,9 @@ path, out = sys.argv[1], sys.argv[2]
 levels = int(sys.argv[3]) if len(sys.argv) > 3 else 2
 balance = float(sys.argv[4]) if len(sys.argv) > 4 else 0.02
 passes = int(sys.argv[5]) if len(sys.argv) > 5 else 8
+weigh = sys.argv[6] if len(sys.argv) > 6 else "cells"
+if weigh not in ("cells", "pins"):
+    raise SystemExit(f"WEIGH is cells or pins, not {weigh!r}")
 ROWS = 350                 # slice rows of the XC7K325T
 # The clock (HCLK) row falls every 25 slice rows, and the packer writes a
 # carry chain's row offsets as -(i + i/25): a chain of more than 25 CARRY4s
@@ -113,17 +123,19 @@ weight = [0] * V
 ram = [0.0] * V           # RAMB36 equivalents
 fixed = [False] * V
 ysum = [0.0] * V
+ncell = [0] * V           # cells, for the mean row whatever WEIGH is
 for i, r in enumerate(root):
     v = vid[r]
-    weight[v] += 1
+    weight[v] += len(cellbits[i]) if weigh == "pins" else 1
     ysum[v] += ys[i]
+    ncell[v] += 1
     if kinds[i] == "RAMB36":
         ram[v] += 1.0
     elif kinds[i] == "RAMB18":
         ram[v] += 0.5
     elif kinds[i] not in yscale:
         fixed[v] = True
-vy = [ysum[v] / weight[v] for v in range(V)]
+vy = [ysum[v] / ncell[v] for v in range(V)]
 
 users = defaultdict(int)
 pins = defaultdict(set)
@@ -374,7 +386,7 @@ for k, (members, r0, r1) in enumerate(regions):
         band_of_v[v] = k
 with open(out, "w") as f:
     f.write(f"# dense bands: {K} bands of the {ROWS} slice rows, band 0 the bottom; "
-            f"recursive FM bisection of {path}, balance {balance}, {passes} passes a split\n")
+            f"recursive FM bisection of {path}, balance {balance}, {passes} passes a split, weighed by {weigh}\n")
     f.write(f"bands {K} rows {ROWS}\n")
     for k, (members, r0, r1) in enumerate(regions):
         f.write(f"band {k} {int(r0)} {int(r1)}\n")
