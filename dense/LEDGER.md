@@ -1531,3 +1531,46 @@ p-b4r1cv-sd:
   `dense/bands.py`: 20260925-a4-frozen-v2, 224 s, PROVENANCE there. They
   are for the comparison with the `-dff` netlist, which
   ~/dense-dff-bench.sh runs once the synthesis ends.
+
+## 2026-09-25 - round 31: the critical path is 20 LUT levels scattered across the bands, 93% of it routing, and not arr_rdy; the clock target never reaches the criticalities
+
+**p-b4r1cv-cp** (24a8d28, p-b4r1cv-sd's settings; place.sh now sets
+NEXTPNR_PLACER_CRIT_PATH) is IDENTICAL to p-b4r1cv-sd, all 33 lines,
+estimated at 19.15 MHz. The critical path it prints runs from a flip-flop
+through 20 LUT levels to a flip-flop D, 52.2 ns in all:
+
+- **routing:** 48.4 ns (93%); the LUT levels about 3.8 ns;
+- **it begins** with u_krnl.eng_lprec[1], an engine register, which
+  costs 9.4 ns from (116,14) to (30,241);
+- **the operand bit** u_krnl.u_lanes.a[146] costs 8.1 ns from grid row
+  245 to row 11;
+- **other hops:** 4.9, 3.8, 4.7 and 4.4 ns between rows 72 and 192,
+  192 and 106, 83 and 183, 183 and 83.
+
+The 4 bands hold grid rows 1-91, 92-182, 183-273 and 274-364. The min-cut
+bands, cut by connectivity alone, put consecutive stages of this path in
+different bands, and the path crosses between them again and again. A band
+is a hard constraint, so no weight can pull those cells together. Even the
+frozen placement without bands is estimated at 22.37 MHz.
+
+**arr_rdy is not on it.** Its replication (below) is still measured, but
+the timing wall is elsewhere.
+
+**Why --freq changes nothing.** nextpnr computes a net's criticality as
+`1 - (slack - worst_slack) / dmax` (common/timing.cc), dmax being the
+critical path's delay. Another clock target shifts every slack and the
+worst slack alike, so every criticality is unchanged. HeAP's timing
+weights (1 + 10 x crit^2) and router2's are the same at any --freq; only
+the verdict after routing depends on it.
+
+Correction to the entry before: its "the router's criticalities are
+saturated at both targets" is wrong. The criticalities are the same
+because the formula does not see the target.
+
+**p-b4r1cvrep32-sd was refused** at 13:20: "120 of the 31968 pins ... are
+not on net 'u_krnl.arr_rdy'". The group file names the pins of a placed
+design. After placement, fixupPlacement lays a shared LUT's inputs onto
+other A pins than packing gave them, and the pass runs at the end of
+packing. 2721797 finds each pin by its cell, the port a hint. Round 32
+(2721797) places it again. Round 31's launcher waited for that
+placement's metrics, which never came, and was stopped.
