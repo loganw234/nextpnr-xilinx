@@ -717,10 +717,28 @@ class HeAPPlacer
             }
             return height[root] = hi - lo + 1;
         };
+        // A name the packer makes from its running counter - "<net>$LUT$<n>",
+        // a feed-through or constant LUT, and "<net>$sumLUT$<n>" - names
+        // another cell, or none, whenever the packing before it makes more
+        // or fewer cells (NEXTPNR_PACK_CARRY_SHARED_S does), so it cannot
+        // show that the file was made from another netlist: one missing is
+        // counted apart. Such cells sit in carry chains and follow their
+        // root, and a check below keeps every chain member in its root's
+        // band.
+        auto counter_named = [](const std::string &s) {
+            size_t d = s.find_last_not_of("0123456789");
+            if (d == std::string::npos || d + 1 == s.size() || s[d] != '$')
+                return false;
+            return (d >= 4 && s.compare(d - 4, 4, "$LUT") == 0) || (d >= 7 && s.compare(d - 7, 7, "$sumLUT") == 0);
+        };
+        int packer_unknown = 0;
         for (auto &a : assign) {
             auto c = ctx->cells.find(ctx->id(a.second));
             if (c == ctx->cells.end()) {
-                unknown++;
+                if (counter_named(a.second))
+                    packer_unknown++;
+                else
+                    unknown++;
                 continue;
             }
             if (c->second->attrs.count(ctx->id("BEL"))) {
@@ -741,6 +759,28 @@ class HeAPPlacer
             n[a.first]++;
             if (c->second->type == ctx->id("SLICE_LUTX"))
                 luts[a.first]++;
+        }
+        // every chain member in its root's band: a counter-made name that now
+        // names another chain's cell must not pull that chain two ways. With
+        // the file's own packing this finds nothing.
+        int moved_to_root = 0;
+        for (auto &cell : ctx->cells) {
+            CellInfo *ci = cell.second.get();
+            if (ci->constr_parent == nullptr || ci->region == nullptr)
+                continue;
+            CellInfo *root = ci->constr_parent;
+            while (root->constr_parent != nullptr)
+                root = root->constr_parent;
+            if (root->region != ci->region) {
+                for (int k = 0; k < K; k++) {
+                    if (ci->region == ctx->region.at(region[k]).get())
+                        n[k]--;
+                    if (root->region == ctx->region.at(region[k]).get())
+                        n[k]++;
+                }
+                ci->region = root->region;
+                moved_to_root++;
+            }
         }
         // each band must have room for what it was given: its sites counted,
         // not assumed (an empty band crashed the placer, bd515f9), for every
@@ -778,8 +818,12 @@ class HeAPPlacer
         int tall_chains = int(tall_roots.size());
         log_info("dense bands: %d bands of %d slice rows from '%s'; %d cells constrained, %d fixed by the design, %d "
                  "not in it, %d left free in %d chains taller than their band\n",
-                 K, R, path, int(assign.size()) - unknown - fixed_cells - too_tall, fixed_cells, unknown, too_tall,
-                 tall_chains);
+                 K, R, path, int(assign.size()) - unknown - packer_unknown - fixed_cells - too_tall, fixed_cells,
+                 unknown, too_tall, tall_chains);
+        if (packer_unknown > 0 || moved_to_root > 0)
+            log_info("dense bands: %d counter-made packer names not in this design (not counted against the file), %d "
+                     "chain members given their root's band\n",
+                     packer_unknown, moved_to_root);
         for (int k = 0; k < K; k++)
             log_info("    band %d: slice rows %d-%d, grid rows %d-%d, %d cells, %d of them LUTs\n", k,
                      band_rows[k].first, band_rows[k].second - 1, gy0[k], gy1[k], n[k], luts[k]);
