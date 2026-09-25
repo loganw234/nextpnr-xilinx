@@ -213,6 +213,9 @@ class HeAPPlacer
         log_info("Running main analytical placer.\n");
         log_info("HeAP convergence: max_stall=%d min_iter=%d keep=%s\n", cfg.max_stall, cfg.min_iter,
                  cfg.keep_last ? "last" : "best");
+        if (cfg.lut_room < 1)
+            log_info("HeAP LUT room: every tile's LUT and FF room x%.2f (NEXTPNR_PLACER_LUT_ROOM), whole bels\n",
+                     cfg.lut_room);
         int kept_iter = -1;
         while ((stalled < cfg.max_stall && (solved_hpwl <= legal_hpwl * 0.8)) || iter < cfg.min_iter) {
             update_derate(iter);
@@ -920,6 +923,15 @@ class HeAPPlacer
     void update_derate(int iter)
     {
         derate = heat_derate;
+        // [dense] NEXTPNR_PLACER_LUT_ROOM: every tile's room first
+        if (cfg.lut_room < 1) {
+            if (derate.empty())
+                derate.assign(max_x + 1, std::vector<float>(max_y + 1, cfg.lut_room));
+            else
+                for (auto &col : derate)
+                    for (auto &v : col)
+                        v = std::min(v, cfg.lut_room);
+        }
         if (cfg.rudy_strength <= 0 || iter < cfg.rudy_from)
             return;
         const int W = max_x + 1, H = max_y + 1;
@@ -2599,6 +2611,7 @@ PlacerHeapCfg::PlacerHeapCfg(Context *ctx)
     heat_radius = env_int("NEXTPNR_PLACER_HEAT_RADIUS", 0, 3);
     heat_pct = float(env_float("NEXTPNR_PLACER_HEAT_PCT", 1, 99.9, 99));
     heat_min = float(env_float("NEXTPNR_PLACER_HEAT_MIN", 0.1, 1, 0.5));
+    lut_room = float(env_float("NEXTPNR_PLACER_LUT_ROOM", 0.1, 1, 1));
     if (const char *e = getenv("NEXTPNR_PLACER_BLOCK_WEIGHT")) {
         char *end = nullptr;
         double v = strtod(e, &end);

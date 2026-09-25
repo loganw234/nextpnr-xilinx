@@ -104,6 +104,16 @@ struct PlacerHeapCfg
     float heat_strength = 0.5, heat_pct = 99, heat_min = 0.5;
     int heat_radius = 3;
 
+    // [dense] Every tile's LUT and FF room scaled by lut_room (whole bels,
+    // rounded down, as for the derating above), before and combined with
+    // the RUDY and heat derating: a tile takes the lowest. The spreader
+    // counts a CLB tile's 16 LUT bels as its room while a LUT alone takes a
+    // whole site of two; NEXTPNR_PACK_LUT_PAIRS lets two LUTs share a site,
+    // and the placer then packs the same logic into fewer slices rather
+    // than spreading it (dense/LEDGER.md, 2026-09-25) - this gives back
+    // the room. 1 (the default) is upstream. NEXTPNR_PLACER_LUT_ROOM.
+    float lut_room = 1;
+
     // These cell types will be randomly locked to prevent singular matrices
     std::unordered_set<IdString> ioBufTypes;
     // These cell types are part of the same unit (e.g. slices split into
