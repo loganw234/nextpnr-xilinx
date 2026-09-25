@@ -1,0 +1,8 @@
+# The default prices on the unaligned 4-band placement, with a bounding
+# box margin of 8 tiles (base 3): the overuse left after the bands is local
+# and concentrated - 78% of base-bands4-long's after eight iterations in one
+# band's heart - and a net may need to detour further than 3 tiles around
+# it. Compare with base-bands4-long, which differs only in this.
+router2/bbMargin/x=8
+router2/bbMargin/y=8
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt

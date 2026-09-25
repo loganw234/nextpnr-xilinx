@@ -1,0 +1,6 @@
+# The default prices on the unaligned 4-band placement, the congestion
+# price multiplied by 1.5 before each iteration's +2. The rising price
+# helped alt-weights on the bands (altwg-bandsA8 5,849 / 5,582 against
+# altw-bandsA8's 6,937 / 6,869). Compare with base-bands4-long.
+router2/currCongWeightGrowth=1.5
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
