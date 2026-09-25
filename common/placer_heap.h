@@ -77,6 +77,18 @@ struct PlacerHeapCfg
     // there gathers every block into one heap (2026-09-24, dense/LEDGER.md).
     int block_from = -1, block_ramp = 0;
 
+    // [dense] Derate the spreader's capacity where routing demand is high.
+    // Before each analytic iteration from rudy_from on, the demand of the
+    // last legal placement is estimated per tile (RUDY: each net's crossing
+    // of a row or column boundary shared over its box), and a tile whose
+    // demand exceeds the rudy_pct-th percentile has its LUT and FF capacity
+    // - site types of at least 8 a tile - scaled by (reference / demand) ^
+    // rudy_strength, no lower than rudy_min. The spreader then counts hot
+    // tiles as fuller than they are and moves cells out. 0 (the default)
+    // is upstream. NEXTPNR_PLACER_RUDY (strength), _PCT, _MIN, _FROM.
+    float rudy_strength = 0, rudy_pct = 90, rudy_min = 0.5;
+    int rudy_from = 1;
+
     // These cell types will be randomly locked to prevent singular matrices
     std::unordered_set<IdString> ioBufTypes;
     // These cell types are part of the same unit (e.g. slices split into

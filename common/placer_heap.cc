@@ -40,6 +40,7 @@
 #include <boost/thread.hpp>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <deque>
 #include <fstream>
@@ -213,6 +214,7 @@ class HeAPPlacer
                  cfg.keep_last ? "last" : "best");
         int kept_iter = -1;
         while ((stalled < cfg.max_stall && (solved_hpwl <= legal_hpwl * 0.8)) || iter < cfg.min_iter) {
+            update_derate(iter);
             // Alternate between particular Bel types and all bels
             for (auto &run : heap_runs) {
                 auto run_startt = std::chrono::high_resolution_clock::now();
@@ -780,6 +782,81 @@ class HeAPPlacer
         for (int k = 0; k < K; k++)
             log_info("    band %d: slice rows %d-%d, grid rows %d-%d, %d cells, %d of them LUTs\n", k,
                      band_rows[k].first, band_rows[k].second - 1, gy0[k], gy1[k], n[k], luts[k]);
+    }
+
+    // [dense] NEXTPNR_PLACER_RUDY: the spreader's capacity per tile, derated
+    // where the last legal placement's routing demand is high (placer_heap.h
+    // says how). Empty: no derating.
+    std::vector<std::vector<float>> derate;
+
+    void update_derate(int iter)
+    {
+        derate.clear();
+        if (cfg.rudy_strength <= 0 || iter < cfg.rudy_from)
+            return;
+        const int W = max_x + 1, H = max_y + 1;
+        std::vector<std::vector<double>> dv(W + 2, std::vector<double>(H + 2, 0.0)), dh = dv;
+        for (auto &net : ctx->nets) {
+            NetInfo *ni = net.second.get();
+            if (ni->driver.cell == nullptr || ni->users.empty() || ni->users.size() > 2000)
+                continue;
+            auto dl = cell_locs.find(ni->driver.cell->name);
+            if (dl == cell_locs.end() || dl->second.global)
+                continue;
+            int x0 = dl->second.legal_x, x1 = x0, y0 = dl->second.legal_y, y1 = y0;
+            for (auto &u : ni->users) {
+                auto ul = cell_locs.find(u.cell->name);
+                if (ul == cell_locs.end())
+                    continue;
+                x0 = std::min(x0, ul->second.legal_x);
+                x1 = std::max(x1, ul->second.legal_x);
+                y0 = std::min(y0, ul->second.legal_y);
+                y1 = std::max(y1, ul->second.legal_y);
+            }
+            x0 = std::max(0, x0), y0 = std::max(0, y0), x1 = std::min(max_x, x1), y1 = std::min(max_y, y1);
+            if (y1 > y0) { // the row boundaries y0..y1-1, over columns x0..x1
+                double v = 1.0 / (x1 - x0 + 1);
+                dv[x0][y0] += v, dv[x1 + 1][y0] -= v, dv[x0][y1] -= v, dv[x1 + 1][y1] += v;
+            }
+            if (x1 > x0) { // the column boundaries x0..x1-1, over rows y0..y1
+                double h = 1.0 / (y1 - y0 + 1);
+                dh[x0][y0] += h, dh[x1][y0] -= h, dh[x0][y1 + 1] -= h, dh[x1][y1 + 1] += h;
+            }
+        }
+        for (auto *m : {&dv, &dh}) {
+            for (int x = 0; x <= W; x++)
+                for (int y = 1; y <= H; y++)
+                    (*m)[x][y] += (*m)[x][y - 1];
+            for (int x = 1; x <= W; x++)
+                for (int y = 0; y <= H; y++)
+                    (*m)[x][y] += (*m)[x - 1][y];
+        }
+        std::vector<double> nonzero;
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+                if (dv[x][y] + dh[x][y] > 0)
+                    nonzero.push_back(dv[x][y] + dh[x][y]);
+        if (nonzero.empty())
+            return;
+        size_t k = std::min(nonzero.size() - 1, size_t(nonzero.size() * cfg.rudy_pct / 100.0));
+        std::nth_element(nonzero.begin(), nonzero.begin() + k, nonzero.end());
+        const double ref = nonzero[k];
+        derate.assign(W, std::vector<float>(H, 1.0f));
+        int hot = 0;
+        float least = 1.0f;
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++) {
+                double d = dv[x][y] + dh[x][y];
+                if (d <= ref)
+                    continue;
+                float f = std::max(cfg.rudy_min, float(std::pow(ref / d, cfg.rudy_strength)));
+                derate[x][y] = f;
+                hot++;
+                least = std::min(least, f);
+            }
+        log_info("HeAP rudy: iteration %d, demand %.1f at the %.0fth percentile, %d tiles derated, to %.2f at "
+                 "least\n",
+                 iter + 1, ref, cfg.rudy_pct, hot, least);
     }
 
     // [dense] The block of each placed cell, for NEXTPNR_PLACER_BLOCK_WEIGHT
@@ -1779,7 +1856,13 @@ class HeAPPlacer
         {
             if (fb.at(type) == nullptr || x >= int(fb.at(type)->size()) || y >= int(fb.at(type)->at(x).size()))
                 return 0;
-            return int(fb.at(type)->at(x).at(y).size());
+            int n = int(fb.at(type)->at(x).at(y).size());
+            // [dense] NEXTPNR_PLACER_RUDY: LUT and FF capacity derated where
+            // routing demand is high; types of fewer than 8 a tile (carry,
+            // RAM, DSP) are left whole
+            if (n >= 8 && !p->derate.empty())
+                n = int(n * p->derate.at(x).at(y));
+            return n;
         }
 
         void init()
@@ -2364,6 +2447,20 @@ PlacerHeapCfg::PlacerHeapCfg(Context *ctx)
     block_min = env_int("NEXTPNR_PLACER_BLOCK_MIN", 1, 200);
     block_from = env_int("NEXTPNR_PLACER_BLOCK_FROM", -1, -1);
     block_ramp = env_int("NEXTPNR_PLACER_BLOCK_RAMP", 0, 0);
+    auto env_float = [](const char *name, double lo, double hi, double dflt) {
+        const char *e = getenv(name);
+        if (e == nullptr)
+            return dflt;
+        char *end = nullptr;
+        double v = strtod(e, &end);
+        if (*e == '\0' || *end != '\0' || !(v >= lo && v <= hi))
+            log_error("%s='%s' is not a number from %g to %g\n", name, e, lo, hi);
+        return v;
+    };
+    rudy_strength = float(env_float("NEXTPNR_PLACER_RUDY", 0, 10, 0));
+    rudy_pct = float(env_float("NEXTPNR_PLACER_RUDY_PCT", 1, 99.9, 90));
+    rudy_min = float(env_float("NEXTPNR_PLACER_RUDY_MIN", 0.1, 1, 0.5));
+    rudy_from = env_int("NEXTPNR_PLACER_RUDY_FROM", 1, 1);
     if (const char *e = getenv("NEXTPNR_PLACER_BLOCK_WEIGHT")) {
         char *end = nullptr;
         double v = strtod(e, &end);

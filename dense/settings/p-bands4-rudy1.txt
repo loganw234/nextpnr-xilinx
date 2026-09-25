@@ -1,0 +1,8 @@
+# The unaligned 4 bands of the best route (bands/20260924-b4-frozen-v2)
+# with the spreader's LUT/FF capacity derated where the last legal
+# placement's routing demand is above its 90th percentile (strength 1, no
+# lower than half). The overuse left after the bands is a local hotspot:
+# 78% of base-bands4-long's after eight iterations in one band's heart.
+# For dense/place.sh; run at several seeds.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
