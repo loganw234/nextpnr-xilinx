@@ -910,3 +910,128 @@ base-b4r1 (derated, NEXTPNR_PLACER_RUDY=1) against base-bands4-long
   the one price that keeps pushing a net that loses every negotiation.
 
 p-b4r2 (derating strength 2, floor 0.4) is placing at three seeds.
+
+## 2026-09-25 - the placement best by the metrics routes worse; RUDY finds where the early overuse will be and half of the tail; the derating's lead holds at 13-15%
+
+**The derating at strength 2** (NEXTPNR_PLACER_RUDY=2, floor 0.4; settings
+p-bands4-rudy2, the 322498b binary) at three seeds, beside strength 1:
+
+| placement | RUDY vertical above 100 | 99.9th percentile | peak | row bands' mean peak | wirelength |
+|---|---|---|---|---|---|
+| strength 1: default / 2 / 3 | 101,601 / 158,143 / 160,180 | 171 / 201 / 239 | 195 / 235 / 264 | 11,378 / 13,366 / 12,025 | 7,809,287 / 7,847,527 / 7,890,884 |
+| strength 2: default / 2 / 3 | 143,844 / 90,342 / 192,202 | 234 / 177 / 230 | 293 / 189 / 308 | 11,769 / 12,158 / 12,240 | 7,543,925 / 7,932,626 / 7,880,342 |
+
+Strength 2 is the noisier: its seeds' sums above 100 run from 90,342 to
+192,202. Seed 2's placement had the lowest sum above 100 and the lowest peak
+of the six derated placements, so it was the one to route.
+
+**`base-b4r2s2`**: the default prices on p-b4r2-s2 (settings base-b4r2s2,
+c6114e6; the 322498b binary; `--seed 2`, cap 20). Its placement trajectory
+is IDENTICAL to p-b4r2-s2's: 32 lines, once the solver times are stripped.
+
+| iteration | plain (base-bands4-long) | strength 1 (base-b4r1) | strength 2, seed 2 (base-b4r2s2) |
+|---|---|---|---|
+| 1 | 301,534 | 308,437 | 315,088 |
+| 2 | 61,437 | 60,087 | 71,639 |
+
+- At iteration 2 the route of the metrics' best placement is 19.2% worse
+  than strength 1's and 16.6% worse than the plain one's.
+- The extra overuse is below the middle and left of the centre. By
+  `dense/heatcmp.py`, slice-row bands 0-6 gain 14,307 and bands 7-13 lose
+  2,755. By width, the twelfths 3-6 gain 22,847. The wires are short and
+  medium: doubles +4,090, bent quads +3,684, vertical quads +2,226,
+  singles +2,125, while the long wires lose.
+- The placement's own row crossings are higher in the same rows. The
+  25-row band means from row 0 read 4,337 / 8,338 / 10,319 / 10,132 /
+  12,158, against strength 1's 2,946 / 6,651 / 9,798 / 9,848 / 10,719.
+- Of the four numbers, only the row bands' mean peak orders these three
+  placements as iteration 2 does (plain 11,361 and strength 1 11,378 level,
+  seed 2 12,158). The sum above 100, the 99.9th percentile and the peak
+  did not.
+  Three placements are consistent with this, not a validation.
+- Iteration 2 is not the tail, and the tail is a different matter (below);
+  the run continues.
+
+**The derating's lead holds** (base-b4r1 against base-b4r1's twin
+base-bands4-long, as in the entry before):
+
+| iteration | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|
+| plain | 13,192 | 12,052 | 11,127 | 10,469 | 9,805 |
+| derated | 11,644 | 10,506 | 9,625 | 8,915 | 8,521 |
+| change | -11.7% | -12.8% | -13.5% | -14.8% | -13.1% |
+
+The gap stopped widening at 13-15%. The derated route at iteration 10 is
+where the plain one was at iteration 13 (8,544). The plain run continues:
+6,386 / 6,205 / 5,959 / 5,963 / 5,694 at iterations 22-26, 2.9% an
+iteration from 21 to 26.
+
+**The history weight 2** (hist2-b4r1, the derated placement) is 27.4 /
+27.9 / 26.9% worse than base-b4r1 at iterations 2 / 3 / 4, and the gap is
+not closing. Iteration 1, which has no history, is the same 308,437.
+
+**Alt-weights on the derated placement** (altw-b4r1): 9,149 / 5,494,
+against 9,926 / 5,894 on the plain placement (altw-bands4): -7.8 / -6.8%.
+Whether it stalls near 5,500 again is the next few iterations.
+
+**Where the tail is.** At iteration 10:
+
+- The slice-row bands 5-6 (rows 125-174, the top of the second band)
+  hold 79% of the derated route's overuse and 71% of the plain one's.
+- Against the plain route, the derating cleared the bands 2-5 (-2,350)
+  and the left of the centre (width twelfths 3-5: -1,553).
+- It left the twelfths 6-9 as they were (-159 in all).
+- The tail's wires are singles and doubles.
+
+**What in the placement stands where the router fails.**
+`dense/heat_vs_placement.py` (new, 3285910) maps each site to the INT
+tile beside it through prjxray's tilegrid.json. The file is frozen at
+`~/dense-bench/grid`, sha256 9597e6f2..., from the cft-openxc7 image
+56bca0f723e3. The tool counts per tile the cells, LUTs, pins on routed
+nets, and RUDY split into its vertical and horizontal parts. It sums each
+count and the route's overuse over square windows, then ranks the two
+against each other.
+
+| placement / route, iteration | RUDY vertical, 11x11: rank correlation / overuse in its top 5% | pins | cells | overuse in tiles above RUDY-V's 90th percentile |
+|---|---|---|---|---|
+| p-b4r1-sd / base-b4r1, 2 | +0.91 / 19% | +0.45 | +0.55 | 31% |
+| p-b4r2-s2 / base-b4r2s2, 2 | +0.90 / 22% | +0.44 | +0.47 | 35% |
+| p-b4r1-sd / base-b4r1, 10 | +0.53 / 41% | +0.18 | +0.22 | 51% |
+| p-bands4d-sd / base-bands4-long, 10 | +0.55 / 33% | +0.19 | +0.23 | 44% |
+| p-bands4d-sd / base-bands4-long, 26 | +0.49 / 30% | +0.17 | +0.20 | 40% |
+
+- RUDY's vertical part finds where the early overuse will be.
+- It finds only about half of where the tail will be. Half of the tail's
+  overuse stands in tiles below RUDY's 86th-90th percentile, where
+  NEXTPNR_PLACER_RUDY (from the 90th) never derates.
+- Cells, LUTs and pins per tile follow the tail even less.
+- These numbers were printed by copies of the two tools that differ from
+  the committed ones only in a docstring and in heat_vs_placement.py's
+  heat-weighted demand line, added before the commit. `dense-place-round17.sh`
+  runs the committed tool on the same five cases and keeps the outputs in
+  `~/dense-bench/analysis/20260925-heat-vs-placement/`. The first case
+  printed the same numbers before that launcher was stopped for the
+  reason below.
+
+**Feedback from the route: NEXTPNR_PLACER_HEAT** (3285910; DENSE.md has
+the formula). The placer is derated where an earlier route failed, not
+where a demand estimate says it will. base-b4r1's overuse after iteration
+10 is frozen at `~/dense-bench/heat/20260925-b4r1-i10`, sha256
+dc8a9116..., with the route's PROVENANCE. The derated 4 bands are then
+placed again with it at the default seed, three ways (settings eefa1b8):
+
+- `p-b4r1h5-sd`: summed over 7x7 tiles, derated by up to 0.5;
+- `p-b4r1h5r8-sd`: summed over 17x17;
+- `p-b4r1h8-sd`: up to 0.8, floor 0.3.
+
+Each is then set beside the same heat, and so is p-b4r1-sd, to see how
+much vertical demand each leaves where base-b4r1 failed.
+
+The launcher's first copy passed place.sh an `--oom-score-adj` option.
+place.sh has no such option; it sets the score on its own container. The
+copy was stopped at 06:16 during its first analysis, before any placement
+was launched, and relaunched without the option.
+
+Load at 06:00: five routes (base-bands4-long, base-b4r1, hist2-b4r1,
+altw-b4r1, base-b4r2s2), load average 7-8 of 36 threads, 23 of 46 GB
+available. The 3285910 build and the three placements run beside them.
