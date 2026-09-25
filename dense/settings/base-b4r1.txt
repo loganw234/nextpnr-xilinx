@@ -1,0 +1,8 @@
+# The default router prices on the derated 4-band placement (p-b4r1-sd:
+# the bands of base-bands4-long, the same seed, NEXTPNR_PLACER_RUDY=1).
+# Its RUDY sum above 100 is higher than the plain placement's (101,601
+# against 75,333) but its peak lower (195 against 208), and the tail on the
+# bands is a local hotspot. Route with --expect-placement at p-b4r1-sd;
+# compare with base-bands4-long, which differs only in the derating.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
