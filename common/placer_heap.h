@@ -89,6 +89,21 @@ struct PlacerHeapCfg
     float rudy_strength = 0, rudy_pct = 90, rudy_min = 0.5;
     int rudy_from = 1;
 
+    // [dense] Derate the spreader's capacity where an earlier route of the
+    // design failed. heat_path names a router2 heatmap (router2/heatmap's
+    // heat_iterN_by_xy.csv: overuse per wire, on the tile grid). It is
+    // summed over a square of 2 * heat_radius + 1 tiles about each tile (a
+    // slice's wiring is in the INT tile beside its CLB, so the square spans
+    // both), and a tile whose sum is s has its LUT and FF capacity scaled by
+    // 1 - heat_strength * min(1, s / reference), no lower than heat_min;
+    // the reference is the heat_pct-th percentile of the nonzero sums. The
+    // derating is fixed for the run; with NEXTPNR_PLACER_RUDY as well, a tile
+    // takes the lower of the two. Empty (the default) is upstream.
+    // NEXTPNR_PLACER_HEAT (the file), _STRENGTH, _RADIUS, _PCT, _MIN.
+    std::string heat_path;
+    float heat_strength = 0.5, heat_pct = 99, heat_min = 0.5;
+    int heat_radius = 3;
+
     // These cell types will be randomly locked to prevent singular matrices
     std::unordered_set<IdString> ioBufTypes;
     // These cell types are part of the same unit (e.g. slices split into

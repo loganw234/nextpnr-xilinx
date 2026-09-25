@@ -80,6 +80,15 @@ summary says so; compare its curve with that in mind.
 | `router2/partition=GXxGY,...`, `router2/threads=N` | grids, finest first: a net routes in the first grid one of whose cells holds its box, a grid's cells in parallel up to N threads (0: the hardware's count), then what fits no cell on one thread. Unset, upstream's quadrants-halves-one-thread code runs unchanged | only when set |
 | `NEXTPNR_PLACER_MAX_STALL`, `_MIN_ITER`, `_KEEP=best\|last` | how long HeAP's analytic loop runs (upstream: until 5 iterations bring no better legal wirelength) and which legal placement it keeps (upstream: the best). Environment variables, like the base's other HeAP knobs, because a setting added before packing moves the placement | only when set |
 | `NEXTPNR_PLACER_BLOCK_WEIGHT` (`_DEPTH`, `_MIN`) | each solved cell tied to its block's mean position by a two-pin net of that weight, every solve; a cell's block is the instance its nets' names name most often (the first DEPTH components, default 4; blocks of at least MIN cells, default 200). The blocks found are logged | only when above 0 |
+| `NEXTPNR_PLACER_BLOCK_FROM`, `_RAMP` | when the block pull acts: from HeAP iteration FROM on (-1, the default: every solve), rising to its full weight over RAMP iterations | only with the pull |
+| `NEXTPNR_PLACER_HPWL_SCALE_Y=N` | the vertical weight of HeAP's wirelength and of the refining annealer's cost (the base's 2: a row costs two columns); 1 to 64 | only when set |
+| `NEXTPNR_DENSE_BANDS=FILE` | cells confined to horizontal bands of the chip, as `dense/bands.py` writes them from the netlist (min-cut bisection, bands ending on the 25-row clock groups): a region per band, the chip's full width. Cells the design fixes and carry chains taller than their band are left free; a file of which more than 0.1% of the cells are not in the design, or that gives a band more cells of a type than it has room for, is refused | only when set |
+| `NEXTPNR_PLACER_RUDY` (`_PCT`, `_MIN`, `_FROM`) | before each analytic iteration, the last legal placement's routing demand per tile (RUDY); a tile above the PCT-th percentile (90) has its LUT and FF capacity scaled by (reference / demand) ^ strength, no lower than MIN (0.5), and the spreader moves cells out | only when above 0 |
+| `NEXTPNR_PLACER_HEAT` (`_STRENGTH`, `_RADIUS`, `_PCT`, `_MIN`) | the same derating from an earlier route's heatmap (`heat_iterN_by_xy.csv`): the overuse summed over a square of 2 x RADIUS + 1 tiles (3), capacity scaled by 1 - STRENGTH (0.5) x min(1, sum / the PCT-th percentile (99)), no lower than MIN (0.5); fixed for the run, and with RUDY a tile takes the lower of the two | only when set |
+
+`dense/heatcmp.py` compares two routes' heatmaps by row band, column band
+and wire type, and `dense/heat_vs_placement.py` asks which placement
+quantity - cells, LUTs, pins, RUDY - stands where a route's overuse is.
 
 Placements are judged before they are routed: `dense/place.sh --name NAME
 --binary BUILD_DIR --settings FILE` places the bench netlist once and

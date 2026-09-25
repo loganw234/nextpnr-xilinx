@@ -155,6 +155,7 @@ class HeAPPlacer
         apply_bands();
         place_constraints();
         build_fast_bels();
+        load_heat();
         seed_placement();
         update_all_chains();
         assign_blocks();
@@ -788,10 +789,93 @@ class HeAPPlacer
     // where the last legal placement's routing demand is high (placer_heap.h
     // says how). Empty: no derating.
     std::vector<std::vector<float>> derate;
+    // [dense] NEXTPNR_PLACER_HEAT: the derating from an earlier route's
+    // heatmap, fixed for the run (placer_heap.h says how). Empty: none.
+    std::vector<std::vector<float>> heat_derate;
+
+    void load_heat()
+    {
+        if (cfg.heat_path.empty())
+            return;
+        const char *path = cfg.heat_path.c_str();
+        std::ifstream f(cfg.heat_path);
+        if (!f)
+            log_error("NEXTPNR_PLACER_HEAT: cannot read '%s'\n", path);
+        std::vector<std::vector<double>> h; // [y][x], as router2 writes it
+        std::string line;
+        double total = 0;
+        while (std::getline(f, line)) {
+            std::vector<double> row;
+            size_t i = 0;
+            while (i < line.size()) {
+                size_t j = line.find(',', i);
+                if (j == std::string::npos)
+                    j = line.size();
+                if (j > i) {
+                    const std::string tok = line.substr(i, j - i);
+                    char *end = nullptr;
+                    double v = strtod(tok.c_str(), &end);
+                    if (*end != '\0' || !(v >= 0))
+                        log_error("NEXTPNR_PLACER_HEAT: '%s' line %d holds '%s', not an overuse count\n", path,
+                                  int(h.size()) + 1, tok.c_str());
+                    row.push_back(v);
+                    total += v;
+                }
+                i = j + 1;
+            }
+            h.push_back(row);
+        }
+        const int W = max_x + 1, H = max_y + 1;
+        if (int(h.size()) < H)
+            log_error("NEXTPNR_PLACER_HEAT: '%s' has %d rows; this device's placement grid has %d\n", path,
+                      int(h.size()), H);
+        for (int y = 0; y < H; y++)
+            if (int(h[y].size()) < W)
+                log_error("NEXTPNR_PLACER_HEAT: '%s' row %d has %d columns; this device's placement grid has %d\n",
+                          path, y + 1, int(h[y].size()), W);
+        // box sums over (2r+1)^2 tiles, clipped at the edges, by prefix sums
+        std::vector<std::vector<double>> c(W + 1, std::vector<double>(H + 1, 0.0));
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+                c[x + 1][y + 1] = h[y][x] + c[x][y + 1] + c[x + 1][y] - c[x][y];
+        const int r = cfg.heat_radius;
+        std::vector<std::vector<double>> s(W, std::vector<double>(H, 0.0));
+        std::vector<double> nonzero;
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++) {
+                int x0 = std::max(0, x - r), x1 = std::min(W, x + r + 1);
+                int y0 = std::max(0, y - r), y1 = std::min(H, y + r + 1);
+                s[x][y] = c[x1][y1] - c[x0][y1] - c[x1][y0] + c[x0][y0];
+                if (s[x][y] > 0)
+                    nonzero.push_back(s[x][y]);
+            }
+        if (nonzero.empty()) {
+            log_warning("NEXTPNR_PLACER_HEAT: '%s' holds no overuse; nothing derated\n", path);
+            return;
+        }
+        size_t k = std::min(nonzero.size() - 1, size_t(nonzero.size() * cfg.heat_pct / 100.0));
+        std::nth_element(nonzero.begin(), nonzero.begin() + k, nonzero.end());
+        const double ref = nonzero[k];
+        heat_derate.assign(W, std::vector<float>(H, 1.0f));
+        int hot = 0;
+        float least = 1.0f;
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++) {
+                if (s[x][y] <= 0)
+                    continue;
+                float fr = std::max(cfg.heat_min, float(1.0 - cfg.heat_strength * std::min(1.0, s[x][y] / ref)));
+                heat_derate[x][y] = fr;
+                hot++;
+                least = std::min(least, fr);
+            }
+        log_info("HeAP heat: '%s', overuse %.0f; summed over %dx%d tiles, reference %.1f at the %.0fth "
+                 "percentile; %d tiles derated by up to %.2f, to %.2f at least\n",
+                 path, total, 2 * r + 1, 2 * r + 1, ref, cfg.heat_pct, hot, cfg.heat_strength, least);
+    }
 
     void update_derate(int iter)
     {
-        derate.clear();
+        derate = heat_derate;
         if (cfg.rudy_strength <= 0 || iter < cfg.rudy_from)
             return;
         const int W = max_x + 1, H = max_y + 1;
@@ -841,7 +925,8 @@ class HeAPPlacer
         size_t k = std::min(nonzero.size() - 1, size_t(nonzero.size() * cfg.rudy_pct / 100.0));
         std::nth_element(nonzero.begin(), nonzero.begin() + k, nonzero.end());
         const double ref = nonzero[k];
-        derate.assign(W, std::vector<float>(H, 1.0f));
+        if (derate.empty())
+            derate.assign(W, std::vector<float>(H, 1.0f));
         int hot = 0;
         float least = 1.0f;
         for (int x = 0; x < W; x++)
@@ -850,7 +935,7 @@ class HeAPPlacer
                 if (d <= ref)
                     continue;
                 float f = std::max(cfg.rudy_min, float(std::pow(ref / d, cfg.rudy_strength)));
-                derate[x][y] = f;
+                derate[x][y] = std::min(derate[x][y], f);
                 hot++;
                 least = std::min(least, f);
             }
@@ -2461,6 +2546,15 @@ PlacerHeapCfg::PlacerHeapCfg(Context *ctx)
     rudy_pct = float(env_float("NEXTPNR_PLACER_RUDY_PCT", 1, 99.9, 90));
     rudy_min = float(env_float("NEXTPNR_PLACER_RUDY_MIN", 0.1, 1, 0.5));
     rudy_from = env_int("NEXTPNR_PLACER_RUDY_FROM", 1, 1);
+    if (const char *e = getenv("NEXTPNR_PLACER_HEAT")) {
+        if (*e == '\0')
+            log_error("NEXTPNR_PLACER_HEAT is set but empty; name a router2 heat_iterN_by_xy.csv\n");
+        heat_path = e;
+    }
+    heat_strength = float(env_float("NEXTPNR_PLACER_HEAT_STRENGTH", 0, 1, 0.5));
+    heat_radius = env_int("NEXTPNR_PLACER_HEAT_RADIUS", 0, 3);
+    heat_pct = float(env_float("NEXTPNR_PLACER_HEAT_PCT", 1, 99.9, 99));
+    heat_min = float(env_float("NEXTPNR_PLACER_HEAT_MIN", 0.1, 1, 0.5));
     if (const char *e = getenv("NEXTPNR_PLACER_BLOCK_WEIGHT")) {
         char *end = nullptr;
         double v = strtod(e, &end);
