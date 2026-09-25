@@ -1,0 +1,8 @@
+# The derated 4 bands (p-bands4-rudy1) with both packer switches of
+# bf27a42: carry S-LUTs with other users in the carry slot, and LUTs paired
+# onto shared physical LUTs. For dense/place.sh at the default seed;
+# compare with p-b4r1-sd, p-b4r1cs-sd and p-b4r1lp-sd.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PACK_CARRY_SHARED_S=1
+NEXTPNR_PACK_LUT_PAIRS=1

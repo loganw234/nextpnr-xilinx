@@ -1,0 +1,7 @@
+# The derated 4 bands (p-bands4-rudy1) with NEXTPNR_PACK_LUT_PAIRS
+# (bf27a42): LUTs that share an input and together read at most five nets
+# paired onto one physical LUT. For dense/place.sh at the default seed;
+# compare with p-b4r1-sd.
+NEXTPNR_DENSE_BANDS=/bench/bands/20260924-b4-frozen-v2/bands.txt
+NEXTPNR_PLACER_RUDY=1
+NEXTPNR_PACK_LUT_PAIRS=1
